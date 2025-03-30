@@ -54,7 +54,7 @@ if [ -z "${SERVER_ID:-}" ]; then
 fi
 
 if [ -z "${TOKEN:-}" ]; then
-    echo -n "请输入身份验证令牌 (例如 bd9fe6d8bd277851ccb57faf06ef81f5): "
+    echo -n "请输入身份验证令牌: "
     read TOKEN
     echo ""
     if [ -z "$TOKEN" ]; then
@@ -85,7 +85,7 @@ fi
 
 # 如果网卡接口未提供，则自动选取流量最大的网卡
 if [ -z "${INTERFACE:-}" ]; then
-    INTERFACE=$(python -c "import psutil; counters = psutil.net_io_counters(pernic=True); print(max(counters, key=lambda k: counters[k].bytes_sent + counters[k].bytes_recv))")
+    INTERFACE=$(python3 -c "import psutil; counters = psutil.net_io_counters(pernic=True); print(max(counters, key=lambda k: counters[k].bytes_sent + counters[k].bytes_recv))")
 fi
 
 echo "============================================"
