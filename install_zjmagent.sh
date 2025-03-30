@@ -110,7 +110,7 @@ pip install --no-cache-dir python-socketio psutil
 echo "[INFO] 正在启动 ZJM Agent 容器..."
 
 # 启动 docker 容器，agent 作为客户端不需要端口映射
-container_id=$(docker run -d --name zjmagent \
+container_id=$(docker run -d --name zjmagent --net=host \
   vpsbuy/zjmagent:latest \
   --server-id "$SERVER_ID" \
   --token "$TOKEN" \
