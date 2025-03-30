@@ -55,7 +55,7 @@ fi
 
 if [ -z "${TOKEN:-}" ]; then
     echo -n "请输入身份验证令牌 (例如 bd9fe6d8bd277851ccb57faf06ef81f5): "
-    read -s TOKEN
+    read TOKEN
     echo ""
     if [ -z "$TOKEN" ]; then
         echo "错误：身份验证令牌不能为空！"
