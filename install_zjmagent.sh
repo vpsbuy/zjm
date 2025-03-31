@@ -5,6 +5,12 @@ echo "============================================"
 echo "ZJM Agent 安装程序"
 echo "============================================"
 
+# 检查 docker 是否已安装
+if ! command -v docker >/dev/null 2>&1; then
+    echo "[ERROR] docker 命令不存在，请先安装 Docker。"
+    exit 1
+fi
+
 # 默认值
 INTERVAL=1
 INTERFACE=""
