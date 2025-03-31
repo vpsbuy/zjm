@@ -81,9 +81,15 @@ if [ -z "${DASHBOARD_URL:-}" ]; then
     fi
 fi
 
-# INTERVAL 默认已设为 1，如有输入则使用用户提供的
+# 检查并安装 pip3 及所需的 python 模块（python-socketio 和 psutil）
+if ! command -v pip3 >/dev/null 2>&1; then
+    echo "[INFO] pip 未安装，正在安装 pip..."
+    apt-get update && apt-get install -y python3-pip
+fi
+echo "[INFO] 正在安装 python-socketio 和 psutil..."
+pip3 install --no-cache-dir python-socketio psutil
 
-# 如果网卡接口未提供，则自动选取流量最大的网卡
+# 如果未指定网卡接口，则自动选取流量最大的网卡
 if [ -z "${INTERFACE:-}" ]; then
     INTERFACE=$(python3 -c "import psutil; counters = psutil.net_io_counters(pernic=True); print(max(counters, key=lambda k: counters[k].bytes_sent + counters[k].bytes_recv))")
 fi
@@ -97,15 +103,6 @@ echo "  Dashboard URL: $DASHBOARD_URL"
 echo "  数据采集间隔: ${INTERVAL}s"
 echo "  网卡接口: $INTERFACE"
 echo "============================================"
-
-# 如果宿主机没有 pip，则安装 pip；同时安装 python-socketio 和 psutil
-if ! command -v pip >/dev/null 2>&1; then
-    echo "[INFO] pip 未安装，正在安装 pip..."
-    apt-get update && apt-get install -y python3-pip
-fi
-
-echo "[INFO] 正在安装 python-socketio 和 psutil..."
-pip install --no-cache-dir python-socketio psutil
 
 echo "[INFO] 正在启动 ZJM Agent 容器..."
 
