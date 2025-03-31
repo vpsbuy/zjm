@@ -11,7 +11,7 @@ docker run -d --name zjmagent --net=host vpsbuy/zjmagent:latest --server-id <SER
 ```
 
 > **说明**  
-> - 使用 `--net=host` 可让容器共享宿主机网络（如果不需要，可去掉该参数）。
+> - 使用 `--net=host` 可让容器共享宿主机网络（agent需要该参数）。
 > - 参数 `<SERVER_ID>`、`<TOKEN>`、`<WS_URL>`、`<DASHBOARD_URL>`、`<INTERVAL>`、`<INTERFACE>` 请根据实际情况替换。
 
 ### 2. zjmapp 模版
