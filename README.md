@@ -36,8 +36,6 @@ services:
   zjmagent:
     image: vpsbuy/zjmagent:latest
     container_name: zjmagent
-    # 这里假设 Dockerfile 中已设置 ENTRYPOINT ["/app/agent"],
-    # command 参数会作为参数传递给 /app/agent
     command: ["--server-id", "<SERVER_ID>",
               "--token", "<TOKEN>",
               "--ws-url", "<WS_URL>",
