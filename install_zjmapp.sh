@@ -63,12 +63,24 @@ while true; do
     fi
 done
 
+# 提示用户输入 APP 端口
+while true; do
+    echo -n "请输入 APP 端口 (例如 9009): "
+    read APP_PORT
+    if [ -n "$APP_PORT" ]; then
+        break
+    else
+        echo "错误：APP 端口不能为空！"
+    fi
+done
+
 echo "============================================"
 echo "[INFO] 配置参数："
 echo "  MySQL 主机: $MYSQL_HOST"
 echo "  MySQL 端口: $MYSQL_PORT"
 echo "  MySQL 数据库: $MYSQL_DB"
 echo "  MySQL 用户: $MYSQL_USER"
+echo "  APP 端口: $APP_PORT"
 echo "============================================"
 echo "正在启动容器..."
 
@@ -81,6 +93,7 @@ container_id=$(docker run -d \
   -e MYSQL_DB="$MYSQL_DB" \
   -e MYSQL_USER="$MYSQL_USER" \
   -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
+  -e APP_PORT="$APP_PORT" \
   --network host \
   vpsbuy/zjmapp:latest)
 
