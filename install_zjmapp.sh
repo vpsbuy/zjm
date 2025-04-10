@@ -63,31 +63,24 @@ while true; do
     fi
 done
 
-# 提示用户输入主机映射端口（容器内部为 8008），若为空则默认使用 8008
-echo -n "请输入主机端口映射 (默认使用 8008): "
-read APP_PORT
-if [ -z "$APP_PORT" ]; then
-    APP_PORT=8008
-fi
-
 echo "============================================"
 echo "[INFO] 配置参数："
 echo "  MySQL 主机: $MYSQL_HOST"
 echo "  MySQL 端口: $MYSQL_PORT"
 echo "  MySQL 数据库: $MYSQL_DB"
 echo "  MySQL 用户: $MYSQL_USER"
-echo "  主机端口映射: $APP_PORT -> 8008 (容器内部)"
 echo "============================================"
 echo "正在启动容器..."
 
-# 运行 docker 容器，并捕获容器 ID
+# 使用 host 模式运行容器，并设置 restart 策略为 unless-stopped（host 模式下不需要端口映射）
 container_id=$(docker run -d \
+  --restart unless-stopped \
   -e MYSQL_HOST="$MYSQL_HOST" \
   -e MYSQL_PORT="$MYSQL_PORT" \
   -e MYSQL_DB="$MYSQL_DB" \
   -e MYSQL_USER="$MYSQL_USER" \
   -e MYSQL_PASSWORD="$MYSQL_PASSWORD" \
-  -p "$APP_PORT:8008" \
+  --network host \
   vpsbuy/zjmapp:latest)
 
 # 检查容器是否成功启动
