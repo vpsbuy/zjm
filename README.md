@@ -98,3 +98,110 @@
 - **方法三（Docker Compose）**：适合日后容器管理和编排，可通过 Compose 文件集中管理服务配置。
 
 根据您的需求和使用习惯选择合适的方法即可。安装完成后，请根据实际情况检查容器运行状态，并确保 MySQL 数据库服务可正常访问。
+
+
+下面提供炸酱面探针 agent 的三种安装方法，分别是使用安装脚本、使用 Docker run 命令以及使用 Docker Compose 管理。根据你的需求，可以选择适合自己情况的方法安装 agent。
+
+---
+
+## 方法一：使用安装脚本
+
+这种方式简单直接，通过运行安装脚本完成 agent 安装。
+
+1. **下载安装脚本**  
+   在终端执行以下命令，将安装脚本下载到当前目录：
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/vpsbuy/zjm/refs/heads/main/install_zjmagent.sh -o install_zjmagent.sh
+   ```
+
+2. **赋予执行权限**  
+   为脚本赋予执行权限：
+   ```bash
+   chmod +x install_zjmagent.sh
+   ```
+
+3. **运行安装脚本**  
+   通过执行脚本启动安装：
+   ```bash
+   ./install_zjmagent.sh
+   ```
+
+安装脚本会自动拉取对应的 Docker 镜像并启动 agent，安装后可以通过日志确认运行状态。
+
+---
+
+## 方法二：使用 Docker run 命令
+
+根据方法三的 Docker Compose 配置，可以转换为 Docker run 命令。具体操作如下：
+
+1. **使用 Docker run 命令**  
+   执行以下命令启动 agent 容器：
+   ```bash
+   docker run -d \
+     --restart unless-stopped \
+     --name zjmagent \
+     --network host \
+     vpsbuy/zjmagent:latest \
+     --server-id agent \
+     --token 7675b4c33323625d25f7558120f53354 \
+     --ws-url http://1.1.1.1:8008 \
+     --dashboard-url http://1.1.1.1:8008 \
+     --interval 1 \
+     --interface eth0
+   ```
+   - 参数说明：
+     - `--restart unless-stopped`：确保容器在异常退出后自动重启。
+     - `--network host`：使用主机网络模式，确保网络通信顺畅。
+     - 后面的参数按照 compose 文件中的 command 配置传递，完成 agent 的初始化参数设置。
+
+2. **查看容器日志**  
+   如果需要查看容器运行状态，可执行：
+   ```bash
+   docker logs -f zjmagent
+   ```
+
+---
+
+## 方法三：使用 Docker Compose
+
+利用 Docker Compose 可以更方便地管理和配置容器。步骤如下：
+
+1. **创建 docker-compose 文件**  
+   在你希望运行 agent 的目录下创建一个名为 `docker-compose.yaml` 的文件，文件内容如下：
+   ```yaml
+   version: "3"
+   services:
+     zjmagent:
+       image: vpsbuy/zjmagent:latest
+       container_name: zjmagent
+       network_mode: host
+       command: ["--server-id", "agent",
+                 "--token", "7675b4c33323625d25f7558120f53354",
+                 "--ws-url", "http://1.1.1.1:8008",
+                 "--dashboard-url", "http://1.1.1.1:8008",
+                 "--interval", "1",
+                 "--interface", "eth0"]
+       restart: unless-stopped
+   ```
+
+2. **启动服务**  
+   打开终端，进入到 `docker-compose.yaml` 所在目录，然后执行以下命令启动 agent 容器：
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **查看容器日志**  
+   通过以下命令可以实时查看容器日志，确认 agent 状态：
+   ```bash
+   docker-compose logs -f zjmagent
+   ```
+
+---
+
+## 小结
+
+- **方法一（安装脚本）**：简单快速，适合不想手动配置 Docker 的用户。  
+- **方法二（Docker run 命令）**：直接使用命令行启动容器，适合习惯命令行操作的用户；命令中已包含所有启动参数。  
+- **方法三（Docker Compose）**：适用于需要长期维护和管理的场景，通过 Compose 文件可以集中管理多个容器和配置项。
+
+选择合适的方法进行安装后，请确认 agent 与服务器之间的网络配置正常，以及相关依赖（如 Docker、Docker Compose）已正确安装。
