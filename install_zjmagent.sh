@@ -95,9 +95,21 @@ fi
 echo "[INFO] 正在安装 python-socketio 和 psutil..."
 pip3 install --no-cache-dir python-socketio psutil
 
-# 如果未指定网卡接口，则自动选取流量最大的网卡
+# 如果未指定网卡接口，则自动检测默认接口，并提示用户确认
 if [ -z "${INTERFACE:-}" ]; then
-    INTERFACE=$(python3 -c "import psutil; counters = psutil.net_io_counters(pernic=True); print(max(counters, key=lambda k: counters[k].bytes_sent + counters[k].bytes_recv))")
+    DEFAULT_IF=$(python3 -c "import psutil; counters = psutil.net_io_counters(pernic=True); print(max(counters, key=lambda k: counters[k].bytes_sent + counters[k].bytes_recv))")
+    echo "检测到默认网卡接口为: $DEFAULT_IF"
+    read -p "是否使用该接口? (Y/n): " CONFIRM_IF
+    if [ "$CONFIRM_IF" = "n" ] || [ "$CONFIRM_IF" = "N" ]; then
+        echo -n "请输入要使用的网卡接口名称: "
+        read INTERFACE
+        if [ -z "$INTERFACE" ]; then
+            echo "错误：网卡接口不能为空！"
+            exit 1
+        fi
+    else
+        INTERFACE="$DEFAULT_IF"
+    fi
 fi
 
 echo "============================================"
