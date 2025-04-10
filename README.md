@@ -51,7 +51,7 @@
      -e MYSQL_PORT=3306 \
      -e MYSQL_DB=dashboard \
      -e MYSQL_USER=dashboard \
-     -e MYSQL_PASSWORD=6tzAywbmnZP3xiEp \
+     -e MYSQL_PASSWORD=6tzKywbmnDP3xiEp \
      -e APP_PORT=9009 \
      vpsbuy/zjmapp:latest
    ```
@@ -88,7 +88,7 @@
          - MYSQL_PORT=3306
          - MYSQL_DB=dashboard
          - MYSQL_USER=dashboard
-         - MYSQL_PASSWORD=6tzAywbmnZP3xiEp
+         - MYSQL_PASSWORD=6tzKywbmnDP3xiEp
          - APP_PORT=9009
    ```
 
