@@ -2,53 +2,79 @@
 
 ---
 
+- **提示 1**：安装完主控后，请在日志中查看后台 admin 密码。  
+- **提示 2**：必须启用 HTTPS 才能登录后台，建议使用域名进行反向代理配置。
+
+---
+
 ## 方法一：使用安装脚本
 
+该方法适用于希望通过脚本自动配置并启动主控服务的用户，步骤如下：
+
 1. **下载脚本**  
-   使用以下命令下载安装脚本：
+   执行以下命令下载安装脚本：
    ```bash
    curl -fsSL https://raw.githubusercontent.com/vpsbuy/zjm/refs/heads/main/install_zjmapp.sh -o install_zjmapp.sh
    ```
 
-2. **赋予权限**  
-   赋予脚本执行权限：
+2. **赋予执行权限**  
+   为脚本赋予执行权限：
    ```bash
    chmod +x install_zjmapp.sh
    ```
 
-3. **运行脚本**  
-   执行安装脚本：
+3. **运行安装脚本**  
+   执行脚本启动安装：
    ```bash
    ./install_zjmapp.sh
    ```
-   脚本会自动拉取镜像并启动容器，根据提示输入信息，安装完成后可通过日志检查运行状态。
+   安装过程中会依次提示输入 MySQL 主机、端口、数据库名称、用户名、密码以及 APP 端口信息。
+
+4. **注意事项**  
+   - 安装完成后，脚本会输出容器日志，请在日志中查看后台 admin 密码。  
+   - 为保证后台安全登录，必须启用 HTTPS，建议使用域名进行反向代理配置。
 
 ---
 
 ## 方法二：直接使用 Docker run 命令
 
-将 Compose 中的配置转换为 Docker run 命令，执行以下命令启动主控容器：
-```bash
-docker run -d \
-  --name zjmapp \
-  --network host \
-  --restart unless-stopped \
-  -e MYSQL_HOST=127.0.0.1 \
-  -e MYSQL_PORT=3306 \
-  -e MYSQL_DB=dashboard \
-  -e MYSQL_USER=dashboard \
-  -e MYSQL_PASSWORD=6tzAywbmnZP3xiEp \
-  -e APP_PORT=9009 \
-  vpsbuy/zjmapp:latest
-```
-使用此命令，容器会通过主机网络模式运行，并按需自动重启。可通过 `docker logs -f zjmapp` 查看启动日志。
+直接使用 Docker 命令启动主控容器，操作步骤如下：
+
+1. **运行 Docker 命令**  
+   执行以下命令（请根据需要修改环境变量的值）：
+   ```bash
+   docker run -d \
+     --name zjmapp \
+     --network host \
+     --restart unless-stopped \
+     -e MYSQL_HOST=127.0.0.1 \
+     -e MYSQL_PORT=3306 \
+     -e MYSQL_DB=dashboard \
+     -e MYSQL_USER=dashboard \
+     -e MYSQL_PASSWORD=6tzAywbmnZP3xiEp \
+     -e APP_PORT=9009 \
+     vpsbuy/zjmapp:latest
+   ```
+
+2. **查看日志并确认**  
+   启动后，通过以下命令查看日志：
+   ```bash
+   docker logs -f zjmapp
+   ```
+   日志中将包含后台 admin 密码信息。
+
+3. **注意事项**  
+   - 请确保日志中记录的 admin 密码已正确保存。  
+   - 后台登录时必须启用 HTTPS，推荐配置域名反向代理以实现 HTTPS 加密访问。
 
 ---
 
 ## 方法三：使用 Docker Compose
 
+利用 Docker Compose 文件方便统一管理和后期维护，操作步骤如下：
+
 1. **创建 Compose 文件**  
-   在任一目录下创建 `docker-compose.yaml`，内容如下：
+   在任一目录下创建名为 `docker-compose.yaml` 的文件，内容如下：
    ```yaml
    version: "3"
    services:
@@ -73,20 +99,18 @@ docker run -d \
    ```
 
 3. **查看日志**  
-   使用下面命令跟踪容器日志：
+   使用以下命令查看日志，确认后台 admin 密码及运行状态：
    ```bash
    docker-compose logs -f zjmapp
    ```
 
+4. **注意事项**  
+   - 日志中会显示后台 admin 密码，请妥善保存。  
+   - 请确保反代配置使用 HTTPS 以保障后台安全访问，建议结合域名进行配置。
+
 ---
 
-### 小结
-
-- **安装脚本**：简单快速，适合需手动配置参数的场景。  
-- **Docker run 命令**：适合直接使用命令行启动，参数清晰直接。  
-- **Docker Compose**：便于日后维护和统一管理配置，推荐用于生产环境部署。
-
-请根据自身需求和实际环境选择合适的安装方法，安装完成后记得检查日志以确认主控服务正常运行。
+选择适合您情况的安装方法后，按照上述步骤进行部署。安装完成后，请务必参考日志中提示内容，确保后台 admin 密码已查看并妥善保存，同时根据安全要求配置 HTTPS 访问后台管理界面。
 
 # 二、下面提供炸酱面探针 agent 的三种安装方法，分别是使用安装脚本、使用 Docker run 命令以及使用 Docker Compose 管理。根据你的需求，可以选择适合自己情况的方法安装 agent。
 
