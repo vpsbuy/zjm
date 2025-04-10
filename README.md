@@ -42,7 +42,7 @@
      -e MYSQL_PORT=3306 \
      -e MYSQL_DB=dashboard \
      -e MYSQL_USER=dashboard \
-     -e MYSQL_PASSWORD=6tzAywbmnZP3xiEp \
+     -e MYSQL_PASSWORD=6tEAkwbmOZP3xiEp \
      vpsbuy/zjmapp:latest && docker logs -f zjmapp
    ```
    - 这里，通过环境变量为容器内部配置了 MySQL 数据库的连接信息；
@@ -74,7 +74,7 @@
          - MYSQL_PORT=3306
          - MYSQL_DB=dashboard
          - MYSQL_USER=dashboard
-         - MYSQL_PASSWORD=6tzAywbmnZP3xiEp
+         - MYSQL_PASSWORD=6tEAkwbmOZP3xiEp
    ```
 
 2. **启动服务**  
@@ -143,7 +143,7 @@
      --network host \
      vpsbuy/zjmagent:latest \
      --server-id agent \
-     --token 7675b4c33323625d25f7558120f53354 \
+     --token 7675b4c33323625d25f7158120f53354 \
      --ws-url http://1.1.1.1:8008 \
      --dashboard-url http://1.1.1.1:8008 \
      --interval 1 \
@@ -176,7 +176,7 @@
        container_name: zjmagent
        network_mode: host
        command: ["--server-id", "agent",
-                 "--token", "7675b4c33323625d25f7558120f53354",
+                 "--token", "7675b4c33323625d25f7158120f53354",
                  "--ws-url", "http://1.1.1.1:8008",
                  "--dashboard-url", "http://1.1.1.1:8008",
                  "--interval", "1",
