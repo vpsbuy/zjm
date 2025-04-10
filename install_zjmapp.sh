@@ -72,9 +72,10 @@ echo "  MySQL 用户: $MYSQL_USER"
 echo "============================================"
 echo "正在启动容器..."
 
-# 使用 host 模式运行容器，并设置 restart 策略为 unless-stopped（host 模式下不需要端口映射）
+# 使用 host 模式运行容器，设置 restart 策略为 unless-stopped，并命名容器为 zjmapp
 container_id=$(docker run -d \
   --restart unless-stopped \
+  --name zjmapp \
   -e MYSQL_HOST="$MYSQL_HOST" \
   -e MYSQL_PORT="$MYSQL_PORT" \
   -e MYSQL_DB="$MYSQL_DB" \
@@ -92,8 +93,10 @@ fi
 echo "容器已启动，容器ID: $container_id"
 echo "============================================"
 echo "等待启动日志输出..."
-# 等待一段时间以确保 entrypoint.sh 执行完成
+# 等待一段时间以确保容器入口程序初始化完成
 sleep 5
 
-echo "安装完成。请使用以下命令查看初始管理员凭据（随机生成的密码）："
-echo "docker logs $container_id"
+echo "安装完成。下面输出当前容器日志："
+docker logs zjmapp
+
+echo "日志输出完成，程序退出。"
