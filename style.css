@@ -1,92 +1,82 @@
-/* ===============================
-   全局变量与基础样式
-   =============================== */
+/* 全局变量定义 */
 :root {
-  --primary-color: #1890ff;         /* 主色调：蓝 */
-  --secondary-color: #52c41a;       /* 辅助色调：绿 */
-  --text-color: #333;
-  --bg-color: #fff;
-  --border-color: #e8e8e8;
-  --shadow: rgba(0, 0, 0, 0.05);
-  --transition-time: 0.3s;
+  --bg-color: #f0f2f5;
+  --card-bg: #ffffff;
+  --primary-color: #1e90ff;
+  --success-color: #28a745;
+  --danger-color: #dc3545;
+  --text-color: #333333;
+  --muted-text: #6c757d;
+  --border-radius: 12px;
+  --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
+/* 基础样式重置 */
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Poppins', sans-serif;
-  font-size: 16px;
+  background-color: var(--bg-color);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: var(--text-color);
-  background: var(--bg-color);
-  line-height: 1.6;
 }
 
-/* ===============================
-   头部
-   =============================== */
+/* 顶部导航栏 */
 header.navbar {
+  background-color: var(--card-bg);
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: var(--box-shadow);
+  padding: 0.75rem 1.5rem;
   position: fixed;
+  width: 100%;
   top: 0;
-  left: 0;
-  right: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 1rem 2rem;
-  background: var(--bg-color);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: 0 2px 4px var(--shadow);
 }
 
 .navbar-brand {
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   font-weight: 600;
-  color: var(--text-color);
+  color: var(--primary-color);
   text-decoration: none;
 }
 
-/* ===============================
-   主体内容容器
-   =============================== */
-main.container {
-  padding-top: 80px; /* 顶部留白以适配固定头部 */
-  padding-left: 2rem;
-  padding-right: 2rem;
-  padding-bottom: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+#toggle-all {
+  margin-left: auto;
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+  cursor: pointer;
 }
 
-/* ===============================
-   卡片组件
-   =============================== */
+/* 主体内容区域 */
+main.container {
+  padding-top: 100px;
+  padding-bottom: 40px;
+}
+
+/* 卡片样式 */
 .card {
-  position: relative;
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px var(--shadow);
+  background-color: var(--card-bg);
+  border: none;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
   overflow: hidden;
-  transition: box-shadow var(--transition-time);
+  position: relative;
+  transition: transform 0.2s;
 }
 
 .card:hover {
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  transform: translateY(-5px);
 }
 
 .card-header {
-  background: var(--primary-color);
-  color: #fff;
+  background-color: var(--primary-color);
+  color: #ffffff;
   padding: 1rem;
-  font-size: 1.25rem;
-  font-weight: bold;
+  font-size: 1.1rem;
+  font-weight: 500;
 }
 
 .card-body {
@@ -94,138 +84,136 @@ main.container {
 }
 
 .card-footer {
+  background-color: #f8f9fa;
   padding: 0.75rem 1rem;
-  background: #fafafa;
-  border-top: 1px solid var(--border-color);
-  text-align: right;
-  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--muted-text);
 }
 
-/* ===============================
-   状态徽章
-   =============================== */
+/* 状态徽章 */
 .status-badge {
   position: absolute;
   top: 1rem;
   right: 1rem;
   padding: 0.25rem 0.75rem;
-  border-radius: 999px;
+  border-radius: 20px;
   font-size: 0.75rem;
+  color: #ffffff;
   font-weight: 500;
-  color: #fff;
-  background: var(--secondary-color);
 }
 
 .bg-online {
-  background: #52c41a;
+  background-color: var(--success-color);
 }
 
 .bg-offline {
-  background: #f5222d;
+  background-color: var(--danger-color);
 }
 
-/* ===============================
-   数据项、进度条与图表
-   =============================== */
+/* 指标项 */
 .metric-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
 }
 
 .metric-label {
   font-weight: 500;
-  color: var(--text-color);
+  color: var(--muted-text);
 }
 
-/* 进度条样式 */
+/* 进度条 */
 .progress {
-  background-color: #f0f0f0;
-  border-radius: 4px;
-  overflow: hidden;
   height: 6px;
+  background-color: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
   margin-bottom: 1rem;
 }
 
 .progress-bar {
-  background: var(--primary-color);
   height: 100%;
-  transition: width var(--transition-time);
+  transition: width 0.6s ease;
 }
 
-/* ===============================
-   实时数据及补充说明
-   =============================== */
-.ping-results-container {
+.bg-primary {
+  background-color: var(--primary-color);
+}
+
+.bg-info {
+  background-color: #17a2b8;
+}
+
+.bg-warning {
+  background-color: #ffc107;
+}
+
+/* 网络统计 */
+.network-stats {
+  background-color: #f1f3f5;
+  border-radius: var(--border-radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.network-stats .row {
   display: flex;
   justify-content: space-around;
+}
+
+.network-stats .col-6 {
+  flex: 0 0 48%;
+}
+
+/* Ping 结果 */
+.ping-results-container {
+  display: flex;
+  justify-content: space-between;
   flex-wrap: wrap;
-  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 .ping-result {
-  flex: 0 0 auto;
-  text-align: center;
-  margin: 0.5rem;
+  flex: 0 0 48%;
+  background-color: #f8f9fa;
   padding: 0.5rem;
-  background: #f9f9f9;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 0.85rem;
+  border-radius: var(--border-radius);
+  text-align: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
 }
 
-/* 自定义代码区块 */
+/* 自定义代码区域 */
 .custom-code {
-  background: #f0f0f0;
+  background-color: #f8f9fa;
+  padding: 0.75rem;
   border-left: 4px solid var(--primary-color);
-  padding: 1rem;
+  border-radius: var(--border-radius);
   margin-top: 1rem;
   font-size: 0.9rem;
-  border-radius: 4px;
+  color: var(--text-color);
 }
 
-/* ===============================
-   按钮、交互元素
-   =============================== */
-button {
-  border: none;
-  background: none;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: inherit;
-  transition: color var(--transition-time);
-}
-
-#toggle-all {
-  font-size: 1.2rem;
-  color: var(--primary-color);
-}
-
-/* 可折叠详情区 */
-.collapse-detail {
-  transition: all var(--transition-time);
-}
-
-/* ===============================
-   底部区域
-   =============================== */
+/* 页脚样式 */
 footer {
-  background: #fafafa;
+  background-color: var(--card-bg);
   padding: 1rem 0;
   text-align: center;
-  border-top: 1px solid var(--border-color);
   font-size: 0.85rem;
-  margin-top: 2rem;
+  color: var(--muted-text);
 }
 
 footer a {
-  color: var(--primary-color);
+  color: var(--muted-text);
   text-decoration: none;
-  transition: color var(--transition-time);
+  margin: 0 0.5rem;
 }
 
 footer a:hover {
-  color: #1278d6;
   text-decoration: underline;
 }
