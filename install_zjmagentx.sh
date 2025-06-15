@@ -42,30 +42,36 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖${NC}"
   if command -v apt-get &>/dev/null; then
-    # Debian/Ubuntu
+    # Debian / Ubuntu
     apt-get update -qq
     apt-get install -y --no-install-recommends curl unzip iproute2
   elif command -v dnf &>/dev/null; then
+    # Fedora / RHEL
     dnf install -y curl unzip iproute
   elif command -v yum &>/dev/null; then
+    # CentOS 7
     yum install -y curl unzip iproute
   elif command -v pacman &>/dev/null; then
+    # Arch
     pacman -Sy --noconfirm curl unzip iproute2
   elif command -v apk &>/dev/null; then
-    echo -e "${BLUE}>> Alpine Linux: 安装 curl unzip openrc iproute2 glibc 兼容层${NC}"
-    # 基础包
-    apk add --no-cache curl unzip openrc iproute2
-    # 安装 glibc 兼容包 (sgerrand)
+    # Alpine Linux
+    echo -e "${BLUE}>> Alpine: 启用 community 源、更新索引、安装 curl unzip iproute2 libc6-compat${NC}"
+    sed -i 's/^#\s*\(http.*community\)/\1/' /etc/apk/repositories
+    apk update
+    apk add --no-cache curl unzip iproute2 libc6-compat
+
+    # 安装 glibc 兼容层（sgerrand 维护版）
+    echo -e "${BLUE}>> 安装 glibc 兼容层${NC}"
     wget -q -O /etc/apk/keys/sgerrand.rsa.pub \
       https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
     GLIBC_VER="2.35-r1"
-    curl -LsS "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-${GLIBC_VER}.apk" \
-         -o "/tmp/glibc-${GLIBC_VER}.apk"
-    curl -LsS "https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-bin-${GLIBC_VER}.apk" \
-         -o "/tmp/glibc-bin-${GLIBC_VER}.apk"
+    wget -q -O /tmp/glibc-${GLIBC_VER}.apk \
+      https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-${GLIBC_VER}.apk
+    wget -q -O /tmp/glibc-bin-${GLIBC_VER}.apk \
+      https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${GLIBC_VER}/glibc-bin-${GLIBC_VER}.apk
     apk add --no-cache --allow-untrusted \
-      /tmp/glibc-${GLIBC_VER}.apk \
-      /tmp/glibc-bin-${GLIBC_VER}.apk
+      /tmp/glibc-${GLIBC_VER}.apk /tmp/glibc-bin-${GLIBC_VER}.apk
     rm -f /tmp/glibc-*.apk
   else
     echo -e "${YELLOW}无法识别包管理器，请手动安装 curl / unzip${NC}"
@@ -99,7 +105,6 @@ Environment=AGENT_LOG_LEVEL=INFO
 [Install]
 WantedBy=multi-user.target
 EOF
-
   systemctl daemon-reload
   systemctl enable --now "$SERVICE_NAME"
 }
@@ -147,7 +152,7 @@ do_install() {
   [[ -f "$AGENT_BIN" ]] || { echo -e "${YELLOW}❌ 找不到 $AGENT_BIN${NC}"; exit 1; }
   chmod +x "$AGENT_BIN"
 
-  # ── 参数补全 ──────────────────────────
+  # 参数补全
   if [[ $CLI_MODE -eq 0 ]]; then
     read -r -p "服务器唯一标识（server_id）： "  SERVER_ID
     read -r -p "令牌（token）： "               TOKEN
@@ -156,11 +161,11 @@ do_install() {
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # ── 网卡选择 ───────────────────────────
+  # 网卡选择
   DEFAULT_IFACE=$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
   if [[ $CLI_MODE -eq 1 && -n "$INTERFACE" ]]; then
-    : # 已由参数指定
+    :  # 已由参数指定
   elif [[ $CLI_MODE -eq 1 ]]; then
     INTERFACE="$DEFAULT_IFACE"
   else
@@ -173,7 +178,7 @@ do_install() {
     fi
   fi
 
-  # ── 安装服务 ───────────────────────────
+  # 安装服务
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
