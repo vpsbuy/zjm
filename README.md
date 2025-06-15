@@ -1,44 +1,23 @@
-# 待修改，请勿使用
+# 一、炸酱面探针在线demo
+[https://zjm.net/](https://zjm.net)
+# 二、炸酱面探针界面预览
+[![OsQVIM.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQVIM.md.jpg)](https://img.tg/image/OsQVIM) [![OsQdNc.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQdNc.md.jpg)](https://img.tg/image/OsQdNc)
 
-一、下面提供三种主控安装炸酱面探针的方法，包括使用安装脚本、直接使用 Docker 命令以及使用 Docker Compose，请预先配置好mysql。
+[![OsQfFG.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQfFG.md.jpg)](https://img.tg/image/OsQfFG) [![OsQsEr.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQsEr.md.jpg)](https://img.tg/image/OsQsEr)
 
----
-
-- **提示 1**：安装完主控后，请在日志中查看后台 admin 密码。  
-- **提示 2**：必须启用 HTTPS 才能登录后台，建议使用域名进行反向代理配置。
-
----
-
-## 方法一：使用安装脚本
-
-该方法适用于希望通过脚本自动配置并启动主控服务的用户，步骤如下：
-
-1. **下载脚本**  
-   执行以下命令下载安装脚本：
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/vpsbuy/zjm/refs/heads/main/install_zjmapp.sh -o install_zjmapp.sh
-   ```
-
-2. **赋予执行权限**  
-   为脚本赋予执行权限：
-   ```bash
-   chmod +x install_zjmapp.sh
-   ```
-
-3. **运行安装脚本**  
-   执行脚本启动安装：
-   ```bash
-   ./install_zjmapp.sh
-   ```
-   安装过程中会依次提示输入 MySQL 主机、端口、数据库名称、用户名、密码以及 APP 端口信息。
-
-4. **注意事项**  
-   - 安装完成后，脚本会输出容器日志，请在日志中查看后台 admin 密码。  
-   - 为保证后台安全登录，必须启用 HTTPS，建议使用域名进行反向代理配置。
+# 三、炸酱面探针安装方法
+## 一、下面提供主控安装炸酱面探针的方法，包括使用直接使用 Docker 命令以及使用 Docker Compose。
 
 ---
 
-## 方法二：直接使用 Docker run 命令
+- **提示1**：安装完主控后，请在日志中查看后台 admin 密码。
+
+![OsQlR1.jpg](https://ooo.0x0.ooo/2025/06/15/OsQlR1.jpg)
+
+- **提示2**：安装完成后访问 http://IP:9009 或者 安装时的端口，也可以用域名反代后访问。  
+---
+
+### 方法一：直接使用 Docker run 命令
 
 直接使用 Docker 命令启动主控容器，操作步骤如下：
 
@@ -49,11 +28,6 @@
      --name zjmapp \
      --network host \
      --restart unless-stopped \
-     -e MYSQL_HOST=127.0.0.1 \
-     -e MYSQL_PORT=3306 \
-     -e MYSQL_DB=dashboard \
-     -e MYSQL_USER=dashboard \
-     -e MYSQL_PASSWORD=6tzKywbmnDP3xiEp \
      -e APP_PORT=9009 \
      vpsbuy/zjmapp:latest
    ```
@@ -67,18 +41,16 @@
 
 3. **注意事项**  
    - 请确保日志中记录的 admin 密码已正确保存。  
-   - 后台登录时必须启用 HTTPS，推荐配置域名反向代理以实现 HTTPS 加密访问。
-
+   - APP_PORT=9009 可自行设置端口号。 
 ---
 
-## 方法三：使用 Docker Compose
+### 方法二：使用 Docker Compose
 
 利用 Docker Compose 文件方便统一管理和后期维护，操作步骤如下：
 
 1. **创建 Compose 文件**  
    在任一目录下创建名为 `docker-compose.yaml` 的文件，内容如下：
    ```yaml
-   version: "3"
    services:
      zjmapp:
        image: vpsbuy/zjmapp:latest
@@ -86,11 +58,6 @@
        network_mode: host
        restart: unless-stopped
        environment:
-         - MYSQL_HOST=127.0.0.1
-         - MYSQL_PORT=3306
-         - MYSQL_DB=dashboard
-         - MYSQL_USER=dashboard
-         - MYSQL_PASSWORD=6tzKywbmnDP3xiEp
          - APP_PORT=9009
    ```
 
@@ -107,20 +74,25 @@
    ```
 
 4. **注意事项**  
-   - 日志中会显示后台 admin 密码，请妥善保存。  
-   - 请确保反代配置使用 HTTPS 以保障后台安全访问，建议结合域名进行配置。
+   - 请确保日志中记录的 admin 密码已正确保存。  
+   - APP_PORT=9009 可自行设置端口号。
 
 ---
 
-选择适合您情况的安装方法后，按照上述步骤进行部署。安装完成后，请务必参考日志中提示内容，确保后台 admin 密码已查看并妥善保存，同时根据安全要求配置 HTTPS 访问后台管理界面。
+### 选择适合您情况的安装方法后，按照上述步骤进行部署。安装完成后，请务必参考日志中提示内容，确保后台 admin 密码已查看并妥善保存。
 
-二、下面提供炸酱面探针 agent 的三种安装方法，分别是使用安装脚本、使用 Docker run 命令以及使用 Docker Compose 管理。根据你的需求，可以选择适合自己情况的方法安装 agent。
+## 二、下面提供炸酱面探针 agent 的三种安装方法，分别是使用管理面板agent一键安装代码、使用安装脚本以及使用 Docker Compose 管理。根据你的需求，可以选择适合自己情况的方法安装 agent。
+
 
 ---
+## 方法一：使用管理面板一键生成的agent安装代码(推荐)
 
-## 方法一：使用安装脚本
+[![OsQ99I.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQ99I.md.jpg)](https://img.tg/image/OsQ99I)
+---
 
-这种方式简单直接，通过运行安装脚本完成 agent 安装。
+### 方法二：使用安装脚本
+
+通过运行安装脚本完成 agent 安装。
 
 1. **下载安装脚本**  
    在终端执行以下命令，将安装脚本下载到当前目录：
@@ -140,39 +112,7 @@
    ./install_zjmagent.sh
    ```
 
-安装脚本会自动拉取对应的 Docker 镜像并启动 agent，安装后可以通过日志确认运行状态。
-
----
-
-## 方法二：使用 Docker run 命令
-
-根据方法三的 Docker Compose 配置，可以转换为 Docker run 命令。具体操作如下：
-
-1. **使用 Docker run 命令**  
-   执行以下命令启动 agent 容器：
-   ```bash
-   docker run -d \
-     --restart unless-stopped \
-     --name zjmagent \
-     --network host \
-     vpsbuy/zjmagent:latest \
-     --server-id agent \
-     --token 7675b4c33323625d25f7158120f53354 \
-     --ws-url http://1.1.1.1:8008 \
-     --dashboard-url http://1.1.1.1:8008 \
-     --interval 1 \
-     --interface eth0
-   ```
-   - 参数说明：
-     - `--restart unless-stopped`：确保容器在异常退出后自动重启。
-     - `--network host`：使用主机网络模式，确保网络通信顺畅。
-     - 后面的参数按照 compose 文件中的 command 配置传递，完成 agent 的初始化参数设置。
-
-2. **查看容器日志**  
-   如果需要查看容器运行状态，可执行：
-   ```bash
-   docker logs -f zjmagent
-   ```
+按照提示输入对应内容，安装后请确认运行状态。
 
 ---
 
@@ -183,7 +123,6 @@
 1. **创建 docker-compose 文件**  
    在你希望运行 agent 的目录下创建一个名为 `docker-compose.yaml` 的文件，文件内容如下：
    ```yaml
-   version: "3"
    services:
      zjmagent:
        image: vpsbuy/zjmagent:latest
@@ -193,8 +132,7 @@
                  "--token", "7675b4c33323625d25f7158120f53354",
                  "--ws-url", "http://1.1.1.1:8008",
                  "--dashboard-url", "http://1.1.1.1:8008",
-                 "--interval", "1",
-                 "--interface", "eth0"]
+                 "--interval", "1"
        restart: unless-stopped
    ```
 
@@ -212,15 +150,9 @@
 
 ---
 
-## 小结
-
-- **方法一（安装脚本）**：简单快速，适合不想手动配置 Docker 的用户。  
-- **方法二（Docker run 命令）**：直接使用命令行启动容器，适合习惯命令行操作的用户；命令中已包含所有启动参数。  
-- **方法三（Docker Compose）**：适用于需要长期维护和管理的场景，通过 Compose 文件可以集中管理多个容器和配置项。
-
 选择合适的方法进行安装后，请确认 agent 与服务器之间的网络配置正常，以及相关依赖（如 Docker、Docker Compose）已正确安装。
 
-# 三、以下是注意事项：
+# 四、以下是注意事项：
 
 - **核查网卡名称**：默认使用 `eth0`，实际系统中可能不同，请使用 `ip addr` 或 `ifconfig` 检查，并根据实际情况调整 agent 的 `--interface` 参数。
 
