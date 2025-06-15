@@ -1,9 +1,9 @@
 # 一、炸酱面探针在线demo
 [https://zjm.net/](https://zjm.net)
 # 二、炸酱面探针界面预览
-[![OsQVIM.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQVIM.md.jpg)](https://img.tg/image/OsQVIM) [![OsQdNc.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQdNc.md.jpg)](https://img.tg/image/OsQdNc)
+![OsQVIM.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQVIM.md.jpg) ![OsQdNc.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQdNc.md.jpg)
 
-[![OsQfFG.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQfFG.md.jpg)](https://img.tg/image/OsQfFG) [![OsQsEr.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQsEr.md.jpg)](https://img.tg/image/OsQsEr)
+![OsQfFG.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQfFG.md.jpg) ![OsQsEr.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQsEr.md.jpg)
 
 # 三、炸酱面探针安装方法
 ## 一、下面提供主控安装炸酱面探针的方法，包括使用直接使用 Docker 命令以及使用 Docker Compose。
@@ -87,7 +87,7 @@
 ---
 ## 方法一：使用管理面板一键生成的agent安装代码(推荐)
 
-[![OsQ99I.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQ99I.md.jpg)](https://img.tg/image/OsQ99I)
+![OsQ99I.md.jpg](https://ooo.0x0.ooo/2025/06/15/OsQ99I.md.jpg)
 ---
 
 ### 方法二：使用安装脚本
