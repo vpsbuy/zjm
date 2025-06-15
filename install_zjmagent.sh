@@ -24,7 +24,7 @@ fi
 # 颜色
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# Agent 包 URL（请替换为实际地址）
+# Agent 包 URL
 AGENT_ZIP_URL="https://app.zjm.net/agent.zip"
 
 # 服务名与路径
