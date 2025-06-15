@@ -34,9 +34,13 @@ INIT_SYS="unknown"   # systemd | openrc | none
 
 # ───────────── 函数 ─────────────────────
 detect_init_system() {
-  if command -v systemctl &>/dev/null;  then INIT_SYS="systemd"
-  elif command -v rc-service &>/dev/null; then INIT_SYS="openrc"
-  else INIT_SYS="none"; fi
+  if command -v systemctl &>/dev/null; then
+    INIT_SYS="systemd"
+  elif command -v rc-service &>/dev/null; then
+    INIT_SYS="openrc"
+  else
+    INIT_SYS="none"
+  fi
 }
 
 install_deps() {
@@ -61,7 +65,6 @@ install_deps() {
     apk update
     apk add --no-cache curl unzip iproute2 libc6-compat
 
-    # 安装 glibc 兼容层（sgerrand 维护版）
     echo -e "${BLUE}>> 安装 glibc 兼容层${NC}"
     wget -q -O /etc/apk/keys/sgerrand.rsa.pub \
       https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub
@@ -74,7 +77,7 @@ install_deps() {
       /tmp/glibc-${GLIBC_VER}.apk /tmp/glibc-bin-${GLIBC_VER}.apk
     rm -f /tmp/glibc-*.apk
   else
-    echo -e "${YELLOW}无法识别包管理器，请手动安装 curl / unzip${NC}"
+    echo -e "${YELLOW}无法识别包管理器，请手动安装 curl / unzip / iproute2${NC}"
     exit 1
   fi
 }
@@ -105,6 +108,7 @@ Environment=AGENT_LOG_LEVEL=INFO
 [Install]
 WantedBy=multi-user.target
 EOF
+
   systemctl daemon-reload
   systemctl enable --now "$SERVICE_NAME"
 }
@@ -152,20 +156,18 @@ do_install() {
   [[ -f "$AGENT_BIN" ]] || { echo -e "${YELLOW}❌ 找不到 $AGENT_BIN${NC}"; exit 1; }
   chmod +x "$AGENT_BIN"
 
-  # 参数补全
   if [[ $CLI_MODE -eq 0 ]]; then
-    read -r -p "服务器唯一标识（server_id）： "  SERVER_ID
-    read -r -p "令牌（token）： "               TOKEN
-    read -r -p "WebSocket 地址（ws-url）： "    WS_URL
-    read -r -p "主控地址（dashboard-url）： "   DASHBOARD_URL
+    read -r -p "服务器唯一标识（server_id）： " SERVER_ID
+    read -r -p "令牌（token）： " TOKEN
+    read -r -p "WebSocket 地址（ws-url）： " WS_URL
+    read -r -p "主控地址（dashboard-url）： " DASHBOARD_URL
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # 网卡选择
   DEFAULT_IFACE=$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
   if [[ $CLI_MODE -eq 1 && -n "$INTERFACE" ]]; then
-    :  # 已由参数指定
+    : 
   elif [[ $CLI_MODE -eq 1 ]]; then
     INTERFACE="$DEFAULT_IFACE"
   else
@@ -178,13 +180,13 @@ do_install() {
     fi
   fi
 
-  # 安装服务
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
     none)
       echo -e "${YELLOW}⚠️ 未检测到 systemd/openrc，已跳过服务安装${NC}"
-      echo "手动运行示例：$AGENT_BIN --server-id $SERVER_ID ...";;
+      echo "手动运行示例：$AGENT_BIN --server-id $SERVER_ID ..."
+      ;;
   esac
 
   echo -e "${GREEN}✅ Agent 安装完成（Init=$INIT_SYS）${NC}"
@@ -244,7 +246,8 @@ done
 
 # 一次性全参数安装
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
-  do_install; exit 0
+  do_install
+  exit 0
 fi
 
 # ───────────── 状态 & 菜单 ─────────────
