@@ -203,12 +203,12 @@ detect_init_system
 echo
 if [[ $INIT_SYS == systemd ]]; then
   systemctl is-active --quiet "$SERVICE_NAME" \
-    && echo -e "${GREEN}服务状态：运行中${NC}" \
-    || echo -e "${YELLOW}服务状态：未运行${NC}"
+    && echo -e "${GREEN}炸酱面探针Agent服务状态：运行中${NC}" \
+    || echo -e "${YELLOW}炸酱面探针Agent服务状态：未运行${NC}"
 elif [[ $INIT_SYS == openrc ]]; then
   rc-service "$SERVICE_NAME" status &>/dev/null \
-    && echo -e "${GREEN}服务状态：运行中${NC}" \
-    || echo -e "${YELLOW}服务状态：未运行${NC}"
+    && echo -e "${GREEN}炸酱面探针Agent服务状态：运行中${NC}" \
+    || echo -e "${YELLOW}炸酱面探针Agent服务状态：未运行${NC}"
 else
   echo -e "${YELLOW}未检测到系统服务${NC}"
 fi
