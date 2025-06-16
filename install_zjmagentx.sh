@@ -3,12 +3,11 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh · 2025-06-15 完整版
-# 炸酱面探针 Agent 安装 / 管理 脚本
-# - 根据系统（Alpine vs 非 Alpine）和架构自动选择对应 zip
-# - 解压后自动查找可执行文件作为 agent 二进制
-# - 支持交互/非交互安装；CLI 模式下直接使用默认网卡，不再提示
-# - OpenRC 下用 start-stop-daemon 生成 pidfile，使 rc-service status 可用
+# install_zjmagent.sh · 2025-06-15 完整版（OpenRC 修正）
+# - 根据系统和架构自动选择 zip
+# - 解压后自动查找可执行文件
+# - 支持交互/非交互安装；CLI 模式下直接用默认网卡
+# - OpenRC 下使用 openrc-run 自带 background 机制生成 pidfile，使 rc-service status 可用
 # - 无红色，仅用 YELLOW/BLUE/GREEN/NC
 ############################################
 
@@ -18,15 +17,12 @@ SERVICE_NAME="zjmagent"
 SERVICE_FILE_SYSTEMD="/etc/systemd/system/${SERVICE_NAME}.service"
 SERVICE_FILE_OPENRC="/etc/init.d/${SERVICE_NAME}"
 
-# 下载基础 URL，可根据实际修改
 BASE_AGENT_URL="${BASE_AGENT_URL:-https://app.zjm.net}"
-# 四个文件名
 FILE_AMD="agent.zip"
 FILE_ARM="agent-arm.zip"
 FILE_ALPINE_AMD="agent-alpine.zip"
 FILE_ALPINE_ARM="agent-alpinearm.zip"
 
-# Alpine glibc 版本
 ALPINE_GLIBC_VER="2.35-r1"
 ALPINE_GLIBC_BASE_URL="https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${ALPINE_GLIBC_VER}"
 
@@ -57,8 +53,8 @@ Options:
   --ws-url URL          指定 WebSocket 地址
   --dashboard-url URL   指定 dashboard 地址
   --interval 秒         指定采集间隔，正整数
-  --interface IFACE     指定网卡名称（在 CLI/环境变量模式下可指定；若不指定则使用默认网卡）
-  -h, --help            显示本帮助并退出
+  --interface IFACE     指定网卡名称（CLI 模式下可指定；若不指定，则使用默认网卡）
+  -h, --help            显示帮助
 
 示例:
   sudo $0
@@ -257,10 +253,10 @@ depend() {
 
 # pidfile 路径
 pidfile="/run/${SERVICE_NAME}.pid"
-# 使用 start-stop-daemon 启动，确保生成 pidfile
-command="/sbin/start-stop-daemon"
-command_args="--start --background --make-pidfile --pidfile \$pidfile --exec $AGENT_BIN -- --server-id $SERVER_ID --token $TOKEN --ws-url $WS_URL --dashboard-url $DASHBOARD_URL --interval $INTERVAL --interface $INTERFACE"
-# 日志重定向
+# 使用 openrc-run 自带的 background 机制
+command="$AGENT_BIN"
+command_args="--server-id $SERVER_ID --token $TOKEN --ws-url $WS_URL --dashboard-url $DASHBOARD_URL --interval $INTERVAL --interface $INTERFACE"
+command_background=true
 output_log="/var/log/${SERVICE_NAME}.log"
 error_log="/var/log/${SERVICE_NAME}.err"
 EOF
@@ -306,7 +302,6 @@ do_install() {
     exit 1
   fi
 
-  # 自动查找可执行文件
   echo -e "${BLUE}>> 识别可执行文件...${NC}"
   mapfile -t execs < <(find "$AGENT_DIR" -type f -perm /u=x,g=x,o=x 2>/dev/null)
   if [[ ${#execs[@]} -eq 0 ]]; then
@@ -331,7 +326,6 @@ do_install() {
   chmod +x "$AGENT_BIN"
   echo -e "${GREEN}>> 选定可执行文件: $AGENT_BIN${NC}"
 
-  # 交互或非交互输入
   if [[ $CLI_MODE -eq 0 ]]; then
     echo -e "${BLUE}>>> 请输入以下配置（直接回车使用默认/跳过）${NC}"
     read -r -p "服务器唯一标识（server_id）: " tmp && SERVER_ID="${tmp:-$SERVER_ID}"
@@ -356,7 +350,7 @@ do_install() {
     fi
   done
 
-  # 选择或校验网卡。CLI 模式下直接取默认网卡；交互模式才提示
+  # CLI 模式下直接使用默认网卡
   local DEFAULT_IFACE
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')"
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
@@ -413,7 +407,7 @@ do_stop() {
 do_restart() {
   detect_init_system
   if [[ $INIT_SYS == systemd ]]; then
-    systemctl.restart "$SERVICE_NAME" && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
+    systemctl restart "$SERVICE_NAME" && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
   elif [[ $INIT_SYS == openrc ]]; then
     rc-service "$SERVICE_NAME" restart && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
   else
@@ -438,7 +432,6 @@ do_uninstall() {
   fi
 }
 
-# 解析 CLI 参数
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)
@@ -467,18 +460,15 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 若环境变量已提供必要参数，视为 CLI 模式
 if [[ $CLI_MODE -eq 0 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   CLI_MODE=1
 fi
 
-# 主流程
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-# 交互菜单
 detect_init_system
 echo
 if [[ $INIT_SYS == systemd ]]; then
