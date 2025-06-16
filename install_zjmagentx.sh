@@ -3,11 +3,11 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh · 最终版
+# install_zjmagent.sh · 最终版 OpenRC 修正2
 # - 自动选取 zip，根据系统/架构下载
 # - 解压后自动识别可执行
 # - 支持交互/非交互安装；CLI 模式下直接用默认网卡
-# - OpenRC 下用 openrc-run background，不再用 start-stop-daemon
+# - OpenRC 下用 openrc-run background，并设置工作目录，使 agent 正常启动
 # - 安装前清理旧服务脚本
 ############################################
 
@@ -236,7 +236,7 @@ EOF
 
 create_openrc_script() {
   mkdir -p /var/log
-  # 清理旧服务脚本，避免残留
+  # 清理旧服务
   if rc-update show | grep -qw "$SERVICE_NAME"; then
     rc-update del "$SERVICE_NAME" default || true
   fi
@@ -260,6 +260,8 @@ depend() {
     need net
 }
 
+# 工作目录，确保 agent 在此目录下启动
+directory="$AGENT_DIR"
 # pidfile 路径
 pidfile="/run/${SERVICE_NAME}.pid"
 command="$AGENT_BIN"
