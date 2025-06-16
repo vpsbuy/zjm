@@ -3,12 +3,12 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh · 2025-06-15 完整版（OpenRC 修正）
-# - 根据系统和架构自动选择 zip
-# - 解压后自动查找可执行文件
+# install_zjmagent.sh · 最终版
+# - 自动选取 zip，根据系统/架构下载
+# - 解压后自动识别可执行
 # - 支持交互/非交互安装；CLI 模式下直接用默认网卡
-# - OpenRC 下使用 openrc-run 自带 background 机制生成 pidfile，使 rc-service status 可用
-# - 无红色，仅用 YELLOW/BLUE/GREEN/NC
+# - OpenRC 下用 openrc-run background，不再用 start-stop-daemon
+# - 安装前清理旧服务脚本
 ############################################
 
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -48,12 +48,12 @@ print_usage() {
 用法: $0 [OPTIONS] [stop|restart|uninstall]
 
 Options:
-  --server-id ID        指定 server_id，需配合 --token/--ws-url/--dashboard-url 才能非交互安装
-  --token TOKEN         指定 token
-  --ws-url URL          指定 WebSocket 地址
-  --dashboard-url URL   指定 dashboard 地址
-  --interval 秒         指定采集间隔，正整数
-  --interface IFACE     指定网卡名称（CLI 模式下可指定；若不指定，则使用默认网卡）
+  --server-id ID        非交互安装时必须
+  --token TOKEN         非交互安装时必须
+  --ws-url URL          非交互安装时必须
+  --dashboard-url URL   非交互安装时必须
+  --interval 秒         采集间隔，正整数
+  --interface IFACE     网卡名称（CLI 模式下可指定；否则自动取默认）
   -h, --help            显示帮助
 
 示例:
@@ -236,6 +236,14 @@ EOF
 
 create_openrc_script() {
   mkdir -p /var/log
+  # 清理旧服务脚本，避免残留
+  if rc-update show | grep -qw "$SERVICE_NAME"; then
+    rc-update del "$SERVICE_NAME" default || true
+  fi
+  if [[ -f "$SERVICE_FILE_OPENRC" ]]; then
+    rm -f "$SERVICE_FILE_OPENRC"
+  fi
+
   local loader_path="/usr/glibc-compat/lib/ld-linux-x86-64.so.2"
   if [[ ! -f "$loader_path" ]]; then
     echo -e "${YELLOW}⚠️ 未检测到 glibc loader ($loader_path)，请确认 glibc 兼容层已安装${NC}"
@@ -244,6 +252,7 @@ create_openrc_script() {
     echo -e "${YELLOW}❌ 创建 OpenRC 脚本前，必要参数不能为空${NC}"
     exit 1
   fi
+
   cat >"$SERVICE_FILE_OPENRC" <<EOF
 #!/sbin/openrc-run
 description="炸酱面探针Agent"
@@ -253,13 +262,13 @@ depend() {
 
 # pidfile 路径
 pidfile="/run/${SERVICE_NAME}.pid"
-# 使用 openrc-run 自带的 background 机制
 command="$AGENT_BIN"
 command_args="--server-id $SERVER_ID --token $TOKEN --ws-url $WS_URL --dashboard-url $DASHBOARD_URL --interval $INTERVAL --interface $INTERFACE"
 command_background=true
 output_log="/var/log/${SERVICE_NAME}.log"
 error_log="/var/log/${SERVICE_NAME}.err"
 EOF
+
   chmod +x "$SERVICE_FILE_OPENRC"
   rc-update add "$SERVICE_NAME" default
   if ! rc-service "$SERVICE_NAME" restart; then
@@ -327,7 +336,7 @@ do_install() {
   echo -e "${GREEN}>> 选定可执行文件: $AGENT_BIN${NC}"
 
   if [[ $CLI_MODE -eq 0 ]]; then
-    echo -e "${BLUE}>>> 请输入以下配置（直接回车使用默认/跳过）${NC}"
+    echo -e "${BLUE}>>> 请输入以下配置（回车跳过使用已有/默认）${NC}"
     read -r -p "服务器唯一标识（server_id）: " tmp && SERVER_ID="${tmp:-$SERVER_ID}"
     read -r -p "令牌（token）: " tmp && TOKEN="${tmp:-$TOKEN}"
     read -r -p "WebSocket 地址（ws-url）: " tmp && WS_URL="${tmp:-$WS_URL}"
@@ -350,7 +359,7 @@ do_install() {
     fi
   done
 
-  # CLI 模式下直接使用默认网卡
+  # CLI 模式下使用默认网卡
   local DEFAULT_IFACE
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')"
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
@@ -432,6 +441,7 @@ do_uninstall() {
   fi
 }
 
+# 解析 CLI 参数
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)
@@ -469,6 +479,7 @@ if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$
   exit 0
 fi
 
+# 交互菜单
 detect_init_system
 echo
 if [[ $INIT_SYS == systemd ]]; then
