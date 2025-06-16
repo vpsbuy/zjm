@@ -3,15 +3,14 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh · 2025-06-15 完整版
-# 炸酱面探针 Agent 安装 / 管理 脚本
+# install_zjmagent.sh · 2025-06-15 改进版（自动识别可执行文件）
 # 特点：
-#   - 根据系统（Alpine vs 非 Alpine）和架构（x86_64/ARM）自动选择对应 zip
-#   - 支持交互式，也支持非交互式通过环境变量或 CLI 参数安装
+#   - 根据系统（Alpine vs 非 Alpine）和架构自动选择对应 zip
+#   - 解压后自动查找可执行文件作为 agent 二进制
+#   - 支持交互/非交互安装
 #   - 无红色，仅用 YELLOW/BLUE/GREEN/NC
 ############################################
 
-# 输出颜色（无红色）
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 SERVICE_NAME="zjmagent"
@@ -26,11 +25,10 @@ FILE_ARM="agent-arm.zip"
 FILE_ALPINE_AMD="agent-alpine.zip"
 FILE_ALPINE_ARM="agent-alpinearm.zip"
 
-# Alpine glibc 版本，可按需修改
+# Alpine glibc 版本
 ALPINE_GLIBC_VER="2.35-r1"
 ALPINE_GLIBC_BASE_URL="https://github.com/sgerrand/alpine-pkg-glibc/releases/download/${ALPINE_GLIBC_VER}"
 
-# 全局变量
 CLI_MODE=0
 SERVER_ID="${SERVER_ID:-}"
 TOKEN="${TOKEN:-}"
@@ -38,9 +36,8 @@ WS_URL="${WS_URL:-}"
 DASHBOARD_URL="${DASHBOARD_URL:-}"
 INTERVAL="${INTERVAL:-1}"
 INTERFACE="${INTERFACE:-}"
-INIT_SYS="unknown"   # systemd | openrc | none
+INIT_SYS="unknown"
 
-# 临时目录，退出时清理
 TMP_DIR=""
 cleanup() {
   if [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]]; then
@@ -63,33 +60,20 @@ Options:
   -h, --help            显示本帮助并退出
 
 示例:
-  # 交互式安装
   sudo $0
-
-  # 非交互式一次性安装 (环境变量方式)
   sudo SERVER_ID=xxx TOKEN=yyy WS_URL=wss://... DASHBOARD_URL=https://... INTERFACE=eth0 INTERVAL=5 $0
-
-  # 或通过参数形式：
   sudo $0 --server-id xxx --token yyy --ws-url wss://... --dashboard-url https://... --interface eth0 --interval 5
-
-  # 停止服务
   sudo $0 stop
-
-  # 重启服务
   sudo $0 restart
-
-  # 卸载服务
   sudo $0 uninstall
 EOF
 }
 
-# 检查根权限
 if [[ $EUID -ne 0 ]]; then
-  echo -e "${YELLOW}⚠️  请使用 root / sudo 运行脚本${NC}"
+  echo -e "${YELLOW}⚠️ 请使用 root / sudo 运行脚本${NC}"
   exit 1
 fi
 
-# 检测初始化系统
 detect_init_system() {
   if command -v systemctl &>/dev/null && systemctl --version &>/dev/null; then
     INIT_SYS="systemd"
@@ -100,7 +84,6 @@ detect_init_system() {
   fi
 }
 
-# 检查命令是否存在
 require_cmd() {
   local cmd="$1" pkg_hint="${2:-}"
   if ! command -v "$cmd" &>/dev/null; then
@@ -137,7 +120,6 @@ install_deps() {
     apk update
     apk add --no-cache curl unzip iproute2 libc6-compat || \
       echo -e "${YELLOW}安装 curl/unzip/iproute2/libc6-compat 失败，请手动安装${NC}"
-    # Alpine glibc 兼容层
     if [[ ! -f "/usr/glibc-compat/lib/ld-linux-x86-64.so.2" ]]; then
       echo -e "${BLUE}>> Alpine: 安装 glibc 兼容层${NC}"
       if ! command -v wget &>/dev/null; then
@@ -150,15 +132,15 @@ install_deps() {
       local ver="$ALPINE_GLIBC_VER"
       local base="$ALPINE_GLIBC_BASE_URL"
       wget -q -O "${TMP_DIR}/glibc.apk" "${base}/glibc-${ver}.apk" || {
-        echo -e "${YELLOW}⚠️ 下载 glibc-${ver}.apk 失败，请检查${NC}"
+        echo -e "${YELLOW}⚠️ 下载 glibc-${ver}.apk 失败${NC}"
         return
       }
       wget -q -O "${TMP_DIR}/glibc-bin.apk" "${base}/glibc-bin-${ver}.apk" || {
-        echo -e "${YELLOW}⚠️ 下载 glibc-bin-${ver}.apk 失败，请检查${NC}"
+        echo -e "${YELLOW}⚠️ 下载 glibc-bin-${ver}.apk 失败${NC}"
         return
       }
       apk add --no-cache --allow-untrusted "${TMP_DIR}/glibc.apk" "${TMP_DIR}/glibc-bin.apk" || {
-        echo -e "${YELLOW}⚠️ 安装 glibc 兼容层失败，请手动检查${NC}"
+        echo -e "${YELLOW}⚠️ 安装 glibc 兼容层失败${NC}"
       }
     else
       echo -e "${BLUE}>> Alpine: 已检测到 glibc-compat，跳过安装${NC}"
@@ -166,13 +148,11 @@ install_deps() {
   else
     echo -e "${YELLOW}无法识别包管理器，请手动安装 curl / unzip / iproute2${NC}"
   fi
-
   for cmd in curl unzip ip; do
     require_cmd "$cmd" || true
   done
 }
 
-# 判断是否 Alpine
 is_alpine() {
   if [[ -f /etc/os-release ]] && grep -qi '^ID=.*alpine' /etc/os-release; then
     return 0
@@ -182,7 +162,6 @@ is_alpine() {
   return 1
 }
 
-# 判断架构类型
 get_arch_type() {
   local m
   m="$(uname -m)"
@@ -194,15 +173,12 @@ get_arch_type() {
   esac
 }
 
-# 选择对应 zip URL
 select_agent_url() {
-  # 若用户已通过环境变量 AGENT_ZIP_URL_OVERRIDE 指定，则使用该值
   if [[ -n "${AGENT_ZIP_URL_OVERRIDE:-}" ]]; then
     AGENT_ZIP_URL="$AGENT_ZIP_URL_OVERRIDE"
     echo -e "${BLUE}>> 使用用户指定下载 URL: $AGENT_ZIP_URL${NC}"
     return
   fi
-
   local arch
   arch="$(get_arch_type)"
   local file
@@ -306,10 +282,8 @@ do_install() {
   detect_init_system
   install_deps
 
-  # 根据系统和架构选择对应 zip URL
   select_agent_url
 
-  # 下载 agent.zip 到临时目录
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → 临时目录${NC}"
   TMP_DIR="$(mktemp -d)"
   local zipfile="${TMP_DIR}/agent.zip"
@@ -328,7 +302,6 @@ do_install() {
     exit 1
   fi
 
-  # 解压
   AGENT_DIR="$(cd "$(dirname "$0")" && pwd)/agent"
   rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
@@ -336,12 +309,33 @@ do_install() {
     echo -e "${YELLOW}❌ 解压 $zipfile 失败，请检查 zip 包内容${NC}"
     exit 1
   fi
-  if [[ ! -f "$AGENT_DIR/agent" ]]; then
-    echo -e "${YELLOW}❌ 找不到 $AGENT_DIR/agent 可执行文件，请确认 zip 包结构${NC}"
+
+  # 自动查找可执行文件
+  echo -e "${BLUE}>> 识别可执行文件...${NC}"
+  # 查找所有具有可执行权限的文件（排除目录），按深度优先
+  mapfile -t execs < <(find "$AGENT_DIR" -type f -perm /u=x,g=x,o=x 2>/dev/null)
+  if [[ ${#execs[@]} -eq 0 ]]; then
+    echo -e "${YELLOW}❌ 未在解压后的目录中发现任何可执行文件，请确认 ZIP 包结构${NC}"
+    echo -e "${BLUE}解压后文件列表:${NC}"
+    find "$AGENT_DIR" -maxdepth 2 | sed 's/^/  /'
     exit 1
   fi
-  chmod +x "$AGENT_DIR/agent"
-  AGENT_BIN="$AGENT_DIR/agent"
+  # 若找到多个，可优先选名为 agent 或 zjmagent，否则取第一个
+  AGENT_BIN_CANDIDATE=""
+  for f in "${execs[@]}"; do
+    base="$(basename "$f")"
+    if [[ "$base" == "agent" || "$base" == "zjmagent" ]]; then
+      AGENT_BIN_CANDIDATE="$f"
+      break
+    fi
+  done
+  if [[ -z "$AGENT_BIN_CANDIDATE" ]]; then
+    AGENT_BIN_CANDIDATE="${execs[0]}"
+    echo -e "${YELLOW}⚠️ 未找到名为 agent 的可执行，使用第一个可执行: $(basename "$AGENT_BIN_CANDIDATE")${NC}"
+  fi
+  AGENT_BIN="$AGENT_BIN_CANDIDATE"
+  chmod +x "$AGENT_BIN"
+  echo -e "${GREEN}>> 选定可执行文件: $AGENT_BIN${NC}"
 
   # 交互或非交互输入
   if [[ $CLI_MODE -eq 0 || -z "$SERVER_ID" || -z "$TOKEN" || -z "$WS_URL" || -z "$DASHBOARD_URL" ]]; then
@@ -361,7 +355,6 @@ do_install() {
     echo -e "${BLUE}>>> 使用 CLI/环境变量 提供的参数进行安装，无交互${NC}"
   fi
 
-  # 校验非空
   for var in SERVER_ID TOKEN WS_URL DASHBOARD_URL; do
     if [[ -z "${!var}" ]]; then
       echo -e "${YELLOW}❌ 参数 $var 不能为空，请检查后重试${NC}"
@@ -369,7 +362,6 @@ do_install() {
     fi
   done
 
-  # 选择或校验网卡
   local DEFAULT_IFACE
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')"
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
@@ -393,7 +385,6 @@ do_install() {
     fi
   fi
 
-  # 创建服务
   detect_init_system
   case "$INIT_SYS" in
     systemd)
@@ -479,12 +470,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 如果通过环境变量已提供必要参数，视为非交互安装
 if [[ $CLI_MODE -eq 0 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   CLI_MODE=1
 fi
 
-# 主流程
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
