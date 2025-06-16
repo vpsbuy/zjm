@@ -3,12 +3,13 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh · 2025-06-15 改进版（自动识别可执行文件）
-# 特点：
-#   - 根据系统（Alpine vs 非 Alpine）和架构自动选择对应 zip
-#   - 解压后自动查找可执行文件作为 agent 二进制
-#   - 支持交互/非交互安装
-#   - 无红色，仅用 YELLOW/BLUE/GREEN/NC
+# install_zjmagent.sh · 2025-06-15 完整版
+# 炸酱面探针 Agent 安装 / 管理 脚本
+# - 根据系统（Alpine vs 非 Alpine）和架构自动选择对应 zip
+# - 解压后自动查找可执行文件作为 agent 二进制
+# - 支持交互/非交互安装；CLI 模式下直接使用默认网卡，不再提示
+# - OpenRC 下用 start-stop-daemon 生成 pidfile，使 rc-service status 可用
+# - 无红色，仅用 YELLOW/BLUE/GREEN/NC
 ############################################
 
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -56,7 +57,7 @@ Options:
   --ws-url URL          指定 WebSocket 地址
   --dashboard-url URL   指定 dashboard 地址
   --interval 秒         指定采集间隔，正整数
-  --interface IFACE     指定网卡名称
+  --interface IFACE     指定网卡名称（在 CLI/环境变量模式下可指定；若不指定则使用默认网卡）
   -h, --help            显示本帮助并退出
 
 示例:
@@ -254,17 +255,12 @@ depend() {
     need net
 }
 
-command="$loader_path"
-command_args="$AGENT_BIN \\
-  --server-id $SERVER_ID \\
-  --token $TOKEN \\
-  --ws-url $WS_URL \\
-  --dashboard-url $DASHBOARD_URL \\
-  --interval $INTERVAL \\
-  --interface $INTERFACE"
-
+# pidfile 路径
 pidfile="/run/${SERVICE_NAME}.pid"
-command_background=true
+# 使用 start-stop-daemon 启动，确保生成 pidfile
+command="/sbin/start-stop-daemon"
+command_args="--start --background --make-pidfile --pidfile \$pidfile --exec $AGENT_BIN -- --server-id $SERVER_ID --token $TOKEN --ws-url $WS_URL --dashboard-url $DASHBOARD_URL --interval $INTERVAL --interface $INTERFACE"
+# 日志重定向
 output_log="/var/log/${SERVICE_NAME}.log"
 error_log="/var/log/${SERVICE_NAME}.err"
 EOF
@@ -312,7 +308,6 @@ do_install() {
 
   # 自动查找可执行文件
   echo -e "${BLUE}>> 识别可执行文件...${NC}"
-  # 查找所有具有可执行权限的文件（排除目录），按深度优先
   mapfile -t execs < <(find "$AGENT_DIR" -type f -perm /u=x,g=x,o=x 2>/dev/null)
   if [[ ${#execs[@]} -eq 0 ]]; then
     echo -e "${YELLOW}❌ 未在解压后的目录中发现任何可执行文件，请确认 ZIP 包结构${NC}"
@@ -320,7 +315,6 @@ do_install() {
     find "$AGENT_DIR" -maxdepth 2 | sed 's/^/  /'
     exit 1
   fi
-  # 若找到多个，可优先选名为 agent 或 zjmagent，否则取第一个
   AGENT_BIN_CANDIDATE=""
   for f in "${execs[@]}"; do
     base="$(basename "$f")"
@@ -338,7 +332,7 @@ do_install() {
   echo -e "${GREEN}>> 选定可执行文件: $AGENT_BIN${NC}"
 
   # 交互或非交互输入
-  if [[ $CLI_MODE -eq 0 || -z "$SERVER_ID" || -z "$TOKEN" || -z "$WS_URL" || -z "$DASHBOARD_URL" ]]; then
+  if [[ $CLI_MODE -eq 0 ]]; then
     echo -e "${BLUE}>>> 请输入以下配置（直接回车使用默认/跳过）${NC}"
     read -r -p "服务器唯一标识（server_id）: " tmp && SERVER_ID="${tmp:-$SERVER_ID}"
     read -r -p "令牌（token）: " tmp && TOKEN="${tmp:-$TOKEN}"
@@ -362,13 +356,16 @@ do_install() {
     fi
   done
 
+  # 选择或校验网卡。CLI 模式下直接取默认网卡；交互模式才提示
   local DEFAULT_IFACE
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/{print $5;exit}')"
   [[ -z "$DEFAULT_IFACE" ]] && DEFAULT_IFACE="eth0"
-  if [[ $CLI_MODE -eq 1 && -n "$INTERFACE" ]]; then
+  if [[ $CLI_MODE -eq 1 ]]; then
+    INTERFACE="${INTERFACE:-$DEFAULT_IFACE}"
     if ! ip link show "$INTERFACE" &>/dev/null; then
-      echo -e "${YELLOW}⚠️ 提供的网卡 $INTERFACE 不存在，可能无法正常采集流量${NC}"
+      echo -e "${YELLOW}⚠️ 默认网卡 $INTERFACE 不存在或不可用，可能无法正常采集流量${NC}"
     fi
+    echo -e "${BLUE}>> 使用默认网卡：$INTERFACE${NC}"
   else
     echo -e "${BLUE}检测到默认网卡：$DEFAULT_IFACE${NC}"
     read -r -p "是否使用该网卡？(Y/n) " yn
@@ -416,7 +413,7 @@ do_stop() {
 do_restart() {
   detect_init_system
   if [[ $INIT_SYS == systemd ]]; then
-    systemctl restart "$SERVICE_NAME" && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
+    systemctl.restart "$SERVICE_NAME" && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
   elif [[ $INIT_SYS == openrc ]]; then
     rc-service "$SERVICE_NAME" restart && echo -e "${GREEN}服务已重启${NC}" || echo -e "${YELLOW}重启服务失败${NC}"
   else
@@ -470,10 +467,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# 若环境变量已提供必要参数，视为 CLI 模式
 if [[ $CLI_MODE -eq 0 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   CLI_MODE=1
 fi
 
+# 主流程
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
