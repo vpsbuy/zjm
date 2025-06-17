@@ -4,9 +4,9 @@ IFS=$'\n\t'
 
 ############################################
 # install_zjmagent.sh
-# 交互式安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
+# 安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
 # 三种二进制：agent (amd), agent-arm, agent-alpine
-# 安装根固定为 /opt/zjmagent，二进制路径 /opt/zjmagent/agent
+# 安装根固定为 /opt/zjmagent，二进制放 /opt/zjmagent/agent
 ############################################
 
 OS="$(uname -s)"
@@ -26,7 +26,7 @@ SERVICE_NAME="zjmagent"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 
-# 固定安装目录，避免多级嵌套
+# 固定安装目录
 INSTALL_ROOT="/opt/zjmagent"
 AGENT_BIN="$INSTALL_ROOT/agent"
 
@@ -223,7 +223,7 @@ do_stop(){
 do_restart(){
   echo -e "${BLUE}>> 重启 服务${NC}"
   if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
-    systemctl restart "${SERVICE_NAME}.service"
+    systemctl.restart "${SERVICE_NAME}.service"
     echo -e "${GREEN}✅ systemd 服务已重启${NC}"
   elif command -v rc-service >/dev/null; then
     rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
