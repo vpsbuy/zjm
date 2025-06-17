@@ -6,9 +6,10 @@ IFS=$'\n\t'
 # install_zjmagent.sh
 # 交互式安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
 # 三种二进制：agent (amd), agent-arm, agent-alpine
+# 安装根固定为 /opt/zjmagent
 ############################################
 
-# 平台检测：仅允许 Linux, macOS, WSL/Git-Bash
+# 平台检测：仅允许 Linux, macOS, WSL/Git-Bash（OpenRC 主要在 Linux Alpine 等）
 OS="$(uname -s)"
 if [[ ! "$OS" =~ ^(Linux|Darwin|MINGW|MSYS) ]]; then
   echo "⚠️ 当前系统 $OS 不支持本脚本，请在 Linux/macOS/WSL 或 Git Bash 下运行。"
@@ -24,18 +25,17 @@ fi
 # 颜色/前缀
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# 基础下载地址（不含文件名后缀），如可执行托管在 https://app.zjm.net/agent、agent-arm、agent-alpine
+# 基础下载地址（不含文件名后缀），例如可执行托管在 https://app.zjm.net/agent、agent-arm、agent-alpine
 BASE_URL="https://app.zjm.net"
 
 SERVICE_NAME="zjmagent"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 
-# 获取脚本所在目录，作为默认安装根
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_ROOT="$PROJECT_DIR"
+# 固定安装根
+INSTALL_ROOT="/opt/zjmagent"
 AGENT_DIR="$INSTALL_ROOT/agent"
-AGENT_BIN="$AGENT_DIR/agent"  # 本地统一命名
+AGENT_BIN="$AGENT_DIR/agent"  # 统一命名
 
 CLI_MODE=0
 SERVER_ID=""; TOKEN=""; WS_URL=""; DASHBOARD_URL=""; INTERVAL=1; INTERFACE=""
@@ -90,33 +90,52 @@ EOF
   systemctl restart "${SERVICE_NAME}.service"
 }
 
-# 写入 OpenRC 脚本
+# 写入 OpenRC 脚本，显式创建 pidfile，以便 status 能检测
 write_openrc_service(){
   echo -e "${BLUE}>> 写入 OpenRC 服务脚本：${OPENRC_SERVICE_FILE}${NC}"
-  cat > "$OPENRC_SERVICE_FILE" <<'EOF'
+  cat > "$OPENRC_SERVICE_FILE" <<EOF
 #!/sbin/openrc-run
-name="zjmagent"
+name="${SERVICE_NAME}"
 description="炸酱面探针Agent"
-command="{{AGENT_BIN}}"
-command_args="--server-id {{SERVER_ID}} --token {{TOKEN}} --ws-url \"{{WS_URL}}\" --dashboard-url \"{{DASHBOARD_URL}}\" --interval {{INTERVAL}} --interface \"{{INTERFACE}}\""
-pidfile="/var/run/${RC_SVCNAME}.pid"
+
+# 可执行和参数
+command="${AGENT_BIN}"
+command_args="--server-id ${SERVER_ID} --token ${TOKEN} --ws-url \"${WS_URL}\" --dashboard-url \"${DASHBOARD_URL}\" --interval ${INTERVAL} --interface \"${INTERFACE}\""
+
+# pidfile 放在 /var/run/zjmagent.pid
+pidfile="/var/run/${SERVICE_NAME}.pid"
+
+# 后台运行
 command_background=true
-directory="{{AGENT_DIR}}"
+# 工作目录
+directory="${AGENT_DIR}"
+
 start_pre() {
-    checkpath --directory --mode 0755 {{AGENT_DIR}}
+    # 确保目录存在
+    checkpath --directory --mode 0755 "${AGENT_DIR}"
+}
+
+start() {
+    ebegin "Starting ${SERVICE_NAME}"
+    # 使用 start-stop-daemon 创建 pidfile 并后台运行
+    start-stop-daemon --start --background --make-pidfile --pidfile "${pidfile}" --exec "${command}" -- ${command_args}
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping ${SERVICE_NAME}"
+    start-stop-daemon --stop --pidfile "${pidfile}" --retry 5
+    # 删除 pidfile
+    rm -f "${pidfile}"
+    eend $?
+}
+
+status() {
+    status_of_proc -p "${pidfile}" "${command}" "${SERVICE_NAME}"
 }
 EOF
-  sed -i \
-    -e "s|{{AGENT_BIN}}|$AGENT_BIN|g" \
-    -e "s|{{SERVER_ID}}|$SERVER_ID|g" \
-    -e "s|{{TOKEN}}|$TOKEN|g" \
-    -e "s|{{WS_URL}}|$WS_URL|g" \
-    -e "s|{{DASHBOARD_URL}}|$DASHBOARD_URL|g" \
-    -e "s|{{INTERVAL}}|$INTERVAL|g" \
-    -e "s|{{INTERFACE}}|$INTERFACE|g" \
-    -e "s|{{AGENT_DIR}}|$AGENT_DIR|g" \
-    "$OPENRC_SERVICE_FILE"
   chmod +x "$OPENRC_SERVICE_FILE"
+  # 将服务加入默认 runlevel，启动或重启
   rc-update add "$SERVICE_NAME" default
   rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
 }
@@ -127,14 +146,10 @@ do_install(){
 
   install_deps
 
-  # 确保 AGENT_DIR 有效
-  if [[ -z "${INSTALL_ROOT:-}" ]]; then
-    echo -e "${YELLOW}⚠️ INSTALL_ROOT 为空，使用 /opt/zjmagent 作为安装根目录${NC}"
-    INSTALL_ROOT="/opt/zjmagent"
-    AGENT_DIR="$INSTALL_ROOT/agent"
-  fi
-  echo -e "${BLUE}DEBUG: INSTALL_ROOT=$INSTALL_ROOT, AGENT_DIR=$AGENT_DIR${NC}"
+  # 确保安装根目录存在
+  echo -e "${BLUE}>> 确保安装目录 ${INSTALL_ROOT} 存在${NC}"
   mkdir -p "$AGENT_DIR"
+  chmod 755 "$INSTALL_ROOT"
 
   # 检测架构并下载对应二进制
   echo -e "${BLUE}>> 检测架构并下载对应二进制${NC}"
@@ -163,14 +178,13 @@ do_install(){
     rm -f "$TMP_FILE"
     exit 1
   fi
-  echo -e "${BLUE}DEBUG: 下载完成，准备移动到 $AGENT_DIR/agent${NC}"
-  if ! mv "$TMP_FILE" "$AGENT_DIR/agent"; then
-    echo -e "${YELLOW}❌ 无法移动下载文件到 $AGENT_DIR/agent，请检查权限或磁盘${NC}"
+  echo -e "${BLUE}>> 移动到 ${AGENT_DIR}/agent 并赋可执行权限${NC}"
+  if ! mv "$TMP_FILE" "$AGENT_BIN"; then
+    echo -e "${YELLOW}❌ 无法移动下载文件到 $AGENT_BIN，请检查权限或磁盘${NC}"
     rm -f "$TMP_FILE"
     exit 1
   fi
-  chmod +x "$AGENT_DIR/agent"
-  AGENT_BIN="$AGENT_DIR/agent"
+  chmod +x "$AGENT_BIN"
   echo -e "${GREEN}✅ 二进制下载并保存到 $AGENT_BIN${NC}"
 
   # 参数或交互输入
