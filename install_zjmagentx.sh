@@ -4,104 +4,57 @@ IFS=$'\n\t'
 
 ############################################
 # install_zjmagent.sh
-# 交互式安装/管理 炸酱面探针Agent 服务脚本
-# 支持根据架构/系统自动下载 agent.zip、agent-arm.zip、agent-alpine.zip
-# 演示网址：https://zjm.net
+# 交互式安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
+# 三种二进制：agent (amd), agent-arm, agent-alpine
 ############################################
 
-# 平台检测：仅允许 Linux, macOS, WSL/Git-Bash
 OS="$(uname -s)"
 if [[ ! "$OS" =~ ^(Linux|Darwin|MINGW|MSYS) ]]; then
-  echo -e "\033[1;33m⚠️ 当前系统 $OS 不支持本脚本，请在 Linux/macOS/WSL 或 Git Bash 下运行。\033[0m"
+  echo "⚠️ 当前系统 $OS 不支持本脚本，请在 Linux/macOS/WSL 或 Git Bash 下运行。"
   exit 1
 fi
 
-# 必须以 root 用户运行
 if [ "$(id -u)" -ne 0 ]; then
-  echo -e "\033[1;33m⚠️ 请以 root 或 sudo 权限运行此脚本\033[0m"
+  echo "⚠️ 请以 root 或 sudo 权限运行此脚本"
   exit 1
 fi
 
-# 颜色/前缀
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# Agent 包基础 URL 前缀，根据实际情况调整
-BASE_AGENT_URL="https://app.zjm.net"
+# 基础下载地址（不含文件名后缀），如可执行托管在 https://app.zjm.net/agent、agent-arm、agent-alpine
+# 若托管逻辑不同，可自行修改下面 BASE_URL
+BASE_URL="https://app.zjm.net"
 
-# 服务名与路径
 SERVICE_NAME="zjmagent"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-# 若需 OpenRC 可自行扩展
+OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT_DIR="$PROJECT_DIR/agent"
-AGENT_BIN="$AGENT_DIR/agent"
+AGENT_BIN="$AGENT_DIR/agent"  # 本地统一命名
 
-# CLI 模式标志及参数初始化
 CLI_MODE=0
 SERVER_ID=""; TOKEN=""; WS_URL=""; DASHBOARD_URL=""; INTERVAL=1; INTERFACE=""
 
-# ----------------------------
-# 根据架构和发行版选择 ZIP 名称
-# ----------------------------
-select_agent_zip(){
-  ZIP_NAME="agent.zip"
-  ARCH="$(uname -m)"
-  OS_ID=""
-  if [ -r /etc/os-release ]; then
-    . /etc/os-release
-    OS_ID="$ID"
-  fi
-
-  if [[ "$OS_ID" == "alpine" ]]; then
-    ZIP_NAME="agent-alpine.zip"
-    echo -e "${BLUE}检测到 Alpine，使用 ZIP: $ZIP_NAME${NC}"
-  else
-    case "$ARCH" in
-      aarch64|armv7l|arm64)
-        ZIP_NAME="agent-arm.zip"
-        echo -e "${BLUE}检测到 ARM 架构 ($ARCH)，使用 ZIP: $ZIP_NAME${NC}"
-        ;;
-      x86_64|amd64)
-        ZIP_NAME="agent.zip"
-        echo -e "${BLUE}检测到 x86_64 架构，使用 ZIP: $ZIP_NAME${NC}"
-        ;;
-      *)
-        ZIP_NAME="agent.zip"
-        echo -e "${YELLOW}⚠️ 未识别架构 $ARCH，默认使用 ZIP: $ZIP_NAME，若不合适请手动调整${NC}"
-        ;;
-    esac
-  fi
-
-  AGENT_ZIP_URL="${BASE_AGENT_URL}/${ZIP_NAME}"
-  export AGENT_ZIP_URL
-}
-
-# ----------------------------
-# 安装依赖：curl unzip systemd
-# ----------------------------
 install_deps(){
-  echo -e "${BLUE}>> 检测并安装依赖：curl unzip systemd（若已有则跳过）${NC}"
-  if   command -v apt-get >/dev/null; then
+  echo -e "${BLUE}>> 检测并安装依赖：curl${NC}"
+  if command -v apt-get >/dev/null; then
     apt-get update
-    apt-get install -y curl unzip systemd
+    apt-get install -y curl
   elif command -v yum >/dev/null; then
-    yum install -y curl unzip systemd
+    yum install -y curl
   elif command -v dnf >/dev/null; then
-    dnf install -y curl unzip systemd
+    dnf install -y curl
   elif command -v pacman >/dev/null; then
-    pacman -Sy --noconfirm curl unzip systemd
+    pacman -Sy --noconfirm curl
   elif command -v apk >/dev/null; then
-    # Alpine 上可能没有 systemd，但安装 unzip/curl
-    apk add --no-cache curl unzip || true
+    apk add --no-cache curl
   else
-    echo -e "${YELLOW}⚠️ 无法识别包管理器，请手动安装 curl 和 unzip${NC}"
+    echo -e "${YELLOW}❌ 无法识别包管理器，请手动安装 curl${NC}"
     exit 1
   fi
 }
 
-# ----------------------------
-# 写入 systemd 单元
-# ----------------------------
 write_systemd_service(){
   echo -e "${BLUE}>> 写入 systemd 单元：${SYSTEMD_SERVICE_FILE}${NC}"
   cat > "$SYSTEMD_SERVICE_FILE" <<EOF
@@ -126,52 +79,77 @@ Environment=AGENT_LOG_LEVEL=INFO
 [Install]
 WantedBy=multi-user.target
 EOF
-
   systemctl daemon-reload
   systemctl enable "${SERVICE_NAME}.service"
   systemctl restart "${SERVICE_NAME}.service"
 }
 
-# ----------------------------
-# 安装并启动 Agent
-# ----------------------------
+write_openrc_service(){
+  echo -e "${BLUE}>> 写入 OpenRC 服务脚本：${OPENRC_SERVICE_FILE}${NC}"
+  cat > "$OPENRC_SERVICE_FILE" <<'EOF'
+#!/sbin/openrc-run
+name="zjmagent"
+description="炸酱面探针Agent"
+command="{{AGENT_BIN}}"
+command_args="--server-id {{SERVER_ID}} --token {{TOKEN}} --ws-url \"{{WS_URL}}\" --dashboard-url \"{{DASHBOARD_URL}}\" --interval {{INTERVAL}} --interface \"{{INTERFACE}}\""
+pidfile="/var/run/${RC_SVCNAME}.pid"
+command_background=true
+directory="{{AGENT_DIR}}"
+start_pre() {
+    checkpath --directory --mode 0755 {{AGENT_DIR}}
+}
+EOF
+  sed -i \
+    -e "s|{{AGENT_BIN}}|$AGENT_BIN|g" \
+    -e "s|{{SERVER_ID}}|$SERVER_ID|g" \
+    -e "s|{{TOKEN}}|$TOKEN|g" \
+    -e "s|{{WS_URL}}|$WS_URL|g" \
+    -e "s|{{DASHBOARD_URL}}|$DASHBOARD_URL|g" \
+    -e "s|{{INTERVAL}}|$INTERVAL|g" \
+    -e "s|{{INTERFACE}}|$INTERFACE|g" \
+    -e "s|{{AGENT_DIR}}|$AGENT_DIR|g" \
+    "$OPENRC_SERVICE_FILE"
+  chmod +x "$OPENRC_SERVICE_FILE"
+  rc-update add "$SERVICE_NAME" default
+  rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
+}
+
 do_install(){
   echo -e "${BLUE}>>> 安装并启动 炸酱面探针Agent <<<${NC}"
 
   install_deps
 
-  select_agent_zip
-
-  echo -e "${BLUE}>> 清理旧的安装目录：${AGENT_DIR}${NC}"
-  if [[ -d "$AGENT_DIR" ]]; then
-    rm -rf "$AGENT_DIR"
-  fi
+  # 选择下载对应可执行
+  echo -e "${BLUE}>> 检测架构并下载对应二进制${NC}"
   mkdir -p "$AGENT_DIR"
-
-  echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → ${AGENT_DIR}${NC}"
-  curl -fsSL "$AGENT_ZIP_URL" -o /tmp/agent.zip || {
-    echo -e "${YELLOW}⚠️ 下载失败：$AGENT_ZIP_URL，请检查网络或 URL 是否正确${NC}"
-    exit 1
-  }
-  unzip -o /tmp/agent.zip -d "$AGENT_DIR" -x "agent.log" || {
-    echo -e "${YELLOW}⚠️ 解压时遇到问题，请检查 agent.zip 内容及 unzip 可用性${NC}"
-    exit 1
-  }
-  rm -f /tmp/agent.zip
-
-  if [ ! -f "$AGENT_BIN" ]; then
-    FOUND_BIN=$(find "$AGENT_DIR" -maxdepth 2 -type f -name "agent" | head -n1 || true)
-    if [[ -n "$FOUND_BIN" ]]; then
-      AGENT_BIN="$FOUND_BIN"
-      echo -e "${YELLOW}⚠️ 未在预期路径找到可执行，改用: $AGENT_BIN${NC}"
-    else
-      echo -e "${YELLOW}⚠️ 找不到 agent 可执行，请检查解压后的文件结构${NC}"
-      exit 1
-    fi
+  ARCH="$(uname -m)"
+  IS_ALPINE=0
+  if [ -f /etc/os-release ] && grep -qi alpine /etc/os-release; then
+    IS_ALPINE=1
   fi
-  chmod +x "$AGENT_BIN"
 
-  # 获取参数：交互或 CLI
+  if [[ "$IS_ALPINE" -eq 1 ]]; then
+    FILE_NAME="agent-alpine"
+  elif [[ "$ARCH" == "x86_64" ]]; then
+    FILE_NAME="agent"
+  elif [[ "$ARCH" == "aarch64" ]]; then
+    FILE_NAME="agent-arm"
+  else
+    echo -e "${YELLOW}❌ 不支持的架构: $ARCH${NC}"
+    exit 1
+  fi
+
+  DOWNLOAD_URL="${BASE_URL}/${FILE_NAME}"
+  echo -e "${BLUE}>> 从 ${DOWNLOAD_URL} 下载${NC}"
+  # 直接下载并重命名为 agent
+  if ! curl -fsSL "$DOWNLOAD_URL" -o "$AGENT_DIR/agent"; then
+    echo -e "${YELLOW}❌ 下载失败，请检查 ${DOWNLOAD_URL}${NC}"
+    exit 1
+  fi
+  chmod +x "$AGENT_DIR/agent"
+  AGENT_BIN="$AGENT_DIR/agent"
+
+  # 参数或交互输入
   if [[ $CLI_MODE -eq 0 ]]; then
     read -r -p "请输入服务器唯一标识（server_id）： " SERVER_ID
     read -r -p "请输入令牌（token）： " TOKEN
@@ -181,7 +159,6 @@ do_install(){
     INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # 网卡接口选择
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')"
   if [[ $CLI_MODE -eq 1 && -n "$INTERFACE" ]]; then
     echo -e "${BLUE}CLI 模式，使用指定网卡接口：${INTERFACE}${NC}"
@@ -199,37 +176,62 @@ do_install(){
     fi
   fi
 
-  # 写入并启动 systemd
-  echo -e "${BLUE}>> 写入 systemd 单元并启动服务${NC}"
-  write_systemd_service
-  echo -e "${GREEN}✅ 安装并启动完成${NC}"
+  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+    write_systemd_service
+    echo -e "${GREEN}✅ 使用 systemd 管理，安装并启动完成${NC}"
+  elif command -v rc-update >/dev/null && command -v openrc >/dev/null; then
+    write_openrc_service
+    echo -e "${GREEN}✅ 使用 OpenRC 管理，安装并启动完成${NC}"
+  else
+    echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，无法自动配置服务。"
+    echo -e "${YELLOW}请手动后台运行："
+    echo -e "${YELLOW}  cd $AGENT_DIR && nohup $AGENT_BIN --server-id $SERVER_ID --token $TOKEN --ws-url \"$WS_URL\" --dashboard-url \"$DASHBOARD_URL\" --interval $INTERVAL --interface \"$INTERFACE\" &${NC}"
+    echo -e "${GREEN}✅ 二进制和配置已准备，请自行集成到服务或后台启动脚本${NC}"
+  fi
 }
 
-# ----------------------------
-# 停止/重启/卸载 服务
-# ----------------------------
 do_stop(){
   echo -e "${BLUE}>> 停止 服务${NC}"
-  systemctl stop "${SERVICE_NAME}.service" || true
-  echo -e "${GREEN}✅ 已停止${NC}"
+  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+    systemctl stop "${SERVICE_NAME}.service" || true
+    echo -e "${GREEN}✅ systemd 服务已停止${NC}"
+  elif command -v rc-service >/dev/null; then
+    rc-service "$SERVICE_NAME" stop || true
+    echo -e "${GREEN}✅ OpenRC 服务已停止${NC}"
+  else
+    echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，需手动停止后台进程${NC}"
+  fi
 }
 do_restart(){
   echo -e "${BLUE}>> 重启 服务${NC}"
-  systemctl restart "${SERVICE_NAME}.service"
-  echo -e "${GREEN}✅ 已重启${NC}"
+  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+    systemctl restart "${SERVICE_NAME}.service"
+    echo -e "${GREEN}✅ systemd 服务已重启${NC}"
+  elif command -v rc-service >/dev/null; then
+    rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
+    echo -e "${GREEN}✅ OpenRC 服务已重启${NC}"
+  else
+    echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，需手动重启后台进程${NC}"
+  fi
 }
 do_uninstall(){
   echo -e "${BLUE}>> 卸载 服务${NC}"
-  systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
-  systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
-  rm -f "$SYSTEMD_SERVICE_FILE"
-  systemctl daemon-reload
-  echo -e "${GREEN}✅ 已卸载${NC}"
+  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+    systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
+    systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
+    rm -f "$SYSTEMD_SERVICE_FILE"
+    systemctl daemon-reload
+    echo -e "${GREEN}✅ 已卸载 systemd 服务${NC}"
+  elif command -v rc-update >/dev/null; then
+    rc-service "$SERVICE_NAME" stop 2>/dev/null || true
+    rc-update del "$SERVICE_NAME" default 2>/dev/null || true
+    rm -f "$OPENRC_SERVICE_FILE"
+    echo -e "${GREEN}✅ 已卸载 OpenRC 服务脚本${NC}"
+  else
+    echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，若之前手动启动，请自行停止并移除启动脚本${NC}"
+  fi
 }
 
-# ----------------------------
-# 解析 CLI 参数（支持非交互安装/停止/重启/卸载）
-# ----------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)     SERVER_ID="$2";     CLI_MODE=1; shift 2;;
@@ -245,22 +247,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# CLI 参数齐全则直接安装
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-# 交互式菜单前显示状态
 echo
-if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-  echo -e "${GREEN}炸酱面探针Agent 服务状态：运行中${NC}"
+if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+  if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+    echo -e "${GREEN}服务状态（systemd）：运行中${NC}"
+  else
+    echo -e "${YELLOW}服务状态（systemd）：未运行${NC}"
+  fi
+elif command -v rc-service >/dev/null; then
+  if rc-service "$SERVICE_NAME" status >/dev/null 2>&1; then
+    echo -e "${GREEN}服务状态（OpenRC）：运行中${NC}"
+  else
+    echo -e "${YELLOW}服务状态（OpenRC）：未运行或未配置${NC}"
+  fi
 else
-  echo -e "${YELLOW}炸酱面探针Agent 服务状态：未运行${NC}"
+  echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC 服务管理，可能需手动启动${NC}"
 fi
 echo
 
-# 交互式菜单
 echo -e "${BLUE}请选择操作：${NC}"
 echo "1) 安装并启动 Agent"
 echo "2) 停止 服务"
@@ -269,10 +278,10 @@ echo "4) 卸载 服务"
 echo "5) 退出"
 read -r -p "输入 [1-5]: " opt
 case "$opt" in
-  1) do_install     ;;
-  2) do_stop        ;;
-  3) do_restart     ;;
-  4) do_uninstall   ;;
-  5) echo "退出。"; exit 0 ;;
-  *) echo -e "${YELLOW}无效选项${NC}"; exit 1 ;;
+  1) do_install ;;
+  2) do_stop    ;;
+  3) do_restart;;
+  4) do_uninstall;;
+  5) echo "退出。"; exit 0;;
+  *) echo "无效选项"; exit 1;;
 esac
