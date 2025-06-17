@@ -34,8 +34,7 @@ OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT_DIR="$PROJECT_DIR/agent"
-# 默认指向最终下载的可执行
-AGENT_BIN="$AGENT_DIR/agent"
+AGENT_BIN="$AGENT_DIR/agent"   # 最终要执行的文件
 
 # CLI 模式及参数
 CLI_MODE=0
@@ -66,7 +65,6 @@ install_deps(){
 # 写入 systemd 单元
 # ----------------------------
 write_systemd_service(){
-  echo -e "${BLUE}>> 写入 systemd 单元：${SYSTEMD_SERVICE_FILE}${NC}"
   cat > "$SYSTEMD_SERVICE_FILE" <<EOF
 [Unit]
 Description=炸酱面探针Agent
@@ -98,7 +96,6 @@ EOF
 # 写入 OpenRC 服务脚本（Alpine 等）
 # ----------------------------
 write_openrc_service(){
-  echo -e "${BLUE}>> 写入 OpenRC 服务脚本：${OPENRC_SERVICE_FILE}${NC}"
   cat > "$OPENRC_SERVICE_FILE" <<'EOF'
 #!/sbin/openrc-run
 name="zjmagent"
@@ -128,7 +125,7 @@ EOF
 }
 
 # ----------------------------
-# 安装并启动 Agent（根据架构下载对应二进制）
+# 安装并启动 Agent
 # ----------------------------
 do_install(){
   echo -e "${BLUE}>>> 安装并启动 炸酱面探针Agent <<<${NC}"
@@ -136,23 +133,22 @@ do_install(){
   install_deps
   mkdir -p "$AGENT_DIR"
 
-  # 检测架构
-  ARCH="$(uname -m)"
-  case "$ARCH" in
-    x86_64)              BINARY_NAME="agent"      ;;
-    aarch64|armv7*|armv8*) BINARY_NAME="agent-arm" ;;
-    *) echo -e "${YELLOW}❌ 不支持的架构: $ARCH${NC}"; exit 1 ;;
-  esac
-
-  # 如果 musl (Alpine)，优先 alpine 版
-  if ldd --version 2>&1 | grep -qi musl; then
+  # 1) 判断是否 Alpine（/etc/os-release 中 ID=alpine 或 apk 包管理器）
+  if grep -qiE '^ID=alpine' /etc/os-release 2>/dev/null || command -v apk >/dev/null; then
     BINARY_NAME="agent-alpine"
+  else
+    # 2) 非 Alpine，再根据 CPU 架构选 agent 或 agent-arm
+    case "$(uname -m)" in
+      x86_64)    BINARY_NAME="agent"      ;;
+      aarch64|armv7*|armv8*) BINARY_NAME="agent-arm" ;;
+      *) echo -e "${YELLOW}❌ 不支持的架构: $(uname -m)${NC}"; exit 1 ;;
+    esac
   fi
 
   DOWNLOAD_URL="${AGENT_BASE_URL}/${BINARY_NAME}"
-  echo -e "${BLUE}>> 下载对应可执行：${DOWNLOAD_URL}${NC}"
+  echo -e "${BLUE}>> 下载二进制：${DOWNLOAD_URL}${NC}"
   curl -fsSL "$DOWNLOAD_URL" -o "$AGENT_DIR/agent" || {
-    echo -e "${YELLOW}❌ 下载失败，请检查网络或 URL${NC}"
+    echo -e "${YELLOW}❌ 下载失败，请检查网络或 URL：$DOWNLOAD_URL${NC}"
     exit 1
   }
   chmod +x "$AGENT_DIR/agent"
@@ -174,23 +170,22 @@ do_install(){
     echo -e "${BLUE}CLI 模式，使用指定网卡接口：${INTERFACE}${NC}"
   else
     if [[ -n "$DEFAULT_IFACE" ]]; then
-      echo -e "${BLUE}检测到默认网卡接口：${DEFAULT_IFACE}${NC}"
-      read -r -p "是否使用该接口？(Y/n) " yn
+      read -r -p "检测到默认网卡接口 ${DEFAULT_IFACE}，是否使用？(Y/n) " yn
       if [[ "$yn" =~ ^[Nn]$ ]]; then
-        read -r -p "请输入要使用的网卡接口： " INTERFACE
+        read -r -p "请输入网卡接口： " INTERFACE
       else
         INTERFACE="$DEFAULT_IFACE"
       fi
     else
-      read -r -p "未检测到默认网卡接口，请输入要使用的网卡接口： " INTERFACE
+      read -r -p "未检测到网卡接口，请输入： " INTERFACE
     fi
   fi
 
-  # 根据服务管理方式启动
-  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+  # 启动服务
+  if command -v systemctl >/dev/null 2>&1; then
     write_systemd_service
     echo -e "${GREEN}✅ 使用 systemd 管理，安装并启动完成${NC}"
-  elif command -v rc-update >/dev/null && command -v openrc >/dev/null; then
+  elif command -v rc-update >/dev/null 2>&1; then
     write_openrc_service
     echo -e "${GREEN}✅ 使用 OpenRC 管理，安装并启动完成${NC}"
   else
@@ -201,52 +196,49 @@ do_install(){
 }
 
 # ----------------------------
-# 停止/重启/卸载 服务
+# 停止/重启/卸载
 # ----------------------------
 do_stop(){
-  echo -e "${BLUE}>> 停止 服务${NC}"
-  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1; then
     systemctl stop "${SERVICE_NAME}.service" || true
-    echo -e "${GREEN}✅ systemd 服务已停止${NC}"
-  elif command -v rc-service >/dev/null; then
+  elif command -v rc-service >/dev/null 2>&1; then
     rc-service "$SERVICE_NAME" stop || true
-    echo -e "${GREEN}✅ OpenRC 服务已停止${NC}"
   else
-    echo -e "${YELLOW}⚠️ 未检测到服务管理器，需手动停止后台进程${NC}"
+    echo -e "${YELLOW}⚠️ 无法检测到服务管理器，请手动停止进程${NC}"
+    return
   fi
+  echo -e "${GREEN}✅ 服务已停止${NC}"
 }
 do_restart(){
-  echo -e "${BLUE}>> 重启 服务${NC}"
-  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1; then
     systemctl restart "${SERVICE_NAME}.service"
-    echo -e "${GREEN}✅ systemd 服务已重启${NC}"
-  elif command -v rc-service >/dev/null; then
+  elif command -v rc-service >/dev/null 2>&1; then
     rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
-    echo -e "${GREEN}✅ OpenRC 服务已重启${NC}"
   else
-    echo -e "${YELLOW}⚠️ 未检测到服务管理器，需手动重启后台进程${NC}"
+    echo -e "${YELLOW}⚠️ 无法检测到服务管理器，请手动重启进程${NC}"
+    return
   fi
+  echo -e "${GREEN}✅ 服务已重启${NC}"
 }
 do_uninstall(){
-  echo -e "${BLUE}>> 卸载 服务${NC}"
-  if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
+  if command -v systemctl >/dev/null 2>&1; then
     systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
     systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
     rm -f "$SYSTEMD_SERVICE_FILE"
     systemctl daemon-reload
-    echo -e "${GREEN}✅ 已卸载 systemd 服务单元${NC}"
-  elif command -v rc-update >/dev/null; then
+  elif command -v rc-update >/dev/null 2>&1; then
     rc-service "$SERVICE_NAME" stop 2>/dev/null || true
     rc-update del "$SERVICE_NAME" default 2>/dev/null || true
     rm -f "$OPENRC_SERVICE_FILE"
-    echo -e "${GREEN}✅ 已卸载 OpenRC 服务脚本${NC}"
   else
-    echo -e "${YELLOW}⚠️ 未检测到服务管理器，若之前手动启动，请自行停止并移除启动脚本${NC}"
+    echo -e "${YELLOW}⚠️ 无法检测到服务管理器，请手动移除启动脚本或后台进程${NC}"
+    return
   fi
+  echo -e "${GREEN}✅ 服务已卸载${NC}"
 }
 
 # ----------------------------
-# 解析 CLI 参数（支持非交互安装/停止/重启/卸载）
+# CLI 参数解析
 # ----------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -263,36 +255,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# CLI 模式且参数齐全时直接安装
+# CLI 模式且齐全则直接安装
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-# ----------------------------
-# 交互式菜单前显示服务状态
-# ----------------------------
+# 交互式菜单前显示状态
 echo
-if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
-  if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-    echo -e "${GREEN}服务（systemd）状态：运行中${NC}"
-  else
-    echo -e "${YELLOW}服务（systemd）状态：未运行${NC}"
-  fi
-elif command -v rc-service >/dev/null; then
-  if rc-service "$SERVICE_NAME" status >/dev/null 2>&1; then
-    echo -e "${GREEN}服务（OpenRC）状态：运行中${NC}"
-  else
-    echo -e "${YELLOW}服务（OpenRC）状态：未运行或未配置${NC}"
-  fi
+if command -v systemctl >/dev/null 2>&1; then
+  systemctl is-active --quiet "${SERVICE_NAME}.service" \
+    && echo -e "${GREEN}服务（systemd）状态：运行中${NC}" \
+    || echo -e "${YELLOW}服务（systemd）状态：未运行${NC}"
+elif command -v rc-service >/dev/null 2>&1; then
+  rc-service "$SERVICE_NAME" status >/dev/null 2>&1 \
+    && echo -e "${GREEN}服务（OpenRC）状态：运行中${NC}" \
+    || echo -e "${YELLOW}服务（OpenRC）状态：未运行或未配置${NC}"
 else
   echo -e "${YELLOW}⚠️ 未检测到服务管理器，可能需手动启动${NC}"
 fi
 echo
 
-# ----------------------------
 # 交互式菜单
-# ----------------------------
 echo -e "${BLUE}请选择操作：${NC}"
 echo "1) 安装并启动 Agent"
 echo "2) 停止 服务"
