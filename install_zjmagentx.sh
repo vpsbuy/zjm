@@ -4,7 +4,7 @@ IFS=$'\n\t'
 
 ############################################
 # install_zjmagent.sh
-# 交互式安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
+# 安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
 # 三种二进制：agent (amd), agent-arm, agent-alpine
 # 安装根固定为 /opt/zjmagent
 ############################################
@@ -22,10 +22,13 @@ fi
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 BASE_URL="https://app.zjm.net"
 SERVICE_NAME="zjmagent"
+
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
+
+# 固定安装根，二进制和可能的配置文件都放此目录
 INSTALL_ROOT="/opt/zjmagent"
-AGENT_DIR="$INSTALL_ROOT/agent"
+AGENT_DIR="$INSTALL_ROOT"
 AGENT_BIN="$AGENT_DIR/agent"
 
 CLI_MODE=0
@@ -38,7 +41,7 @@ install_deps(){
     apt-get install -y curl
   elif command -v yum >/dev/null; then
     yum install -y curl
-  elif command -v dnf >/dom/null; then
+  elif command -v dnf >/dev/null; then
     dnf install -y curl
   elif command -v pacman >/dev/null; then
     pacman -Sy --noconfirm curl
@@ -89,7 +92,6 @@ description="炸酱面探针Agent"
 command="${AGENT_BIN}"
 command_args="--server-id ${SERVER_ID} --token ${TOKEN} --ws-url \"${WS_URL}\" --dashboard-url \"${DASHBOARD_URL}\" --interval ${INTERVAL} --interface \"${INTERFACE}\""
 
-# 使用大写变量，避免与 shell 内部混淆
 PIDFILE="/var/run/${SERVICE_NAME}.pid"
 
 command_background=true
@@ -117,7 +119,6 @@ stop() {
 }
 
 status() {
-    # 直接使用 PIDFILE 变量
     status_of_proc -p "${PIDFILE}" "${command}" "${SERVICE_NAME}"
 }
 EOF
@@ -140,6 +141,7 @@ do_install(){
   if [ -f /etc/os-release ] && grep -qi alpine /etc/os-release; then
     IS_ALPINE=1
   fi
+
   if [[ "$IS_ALPINE" -eq 1 ]]; then
     FILE_NAME="agent-alpine"
   elif [[ "$ARCH" == "x86_64" ]]; then
