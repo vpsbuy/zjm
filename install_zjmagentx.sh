@@ -4,9 +4,9 @@ IFS=$'\n\t'
 
 ############################################
 # install_zjmagent.sh
-# 安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
+# 交互式安装/管理 炸酱面探针Agent 服务脚本（兼容 systemd/OpenRC/其它）
 # 三种二进制：agent (amd), agent-arm, agent-alpine
-# 安装根固定为 /opt/zjmagent
+# 安装根固定为 /opt/zjmagent，二进制路径 /opt/zjmagent/agent
 ############################################
 
 OS="$(uname -s)"
@@ -26,10 +26,9 @@ SERVICE_NAME="zjmagent"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 
-# 固定安装根，二进制和可能的配置文件都放此目录
+# 固定安装目录，避免多级嵌套
 INSTALL_ROOT="/opt/zjmagent"
-AGENT_DIR="$INSTALL_ROOT"
-AGENT_BIN="$AGENT_DIR/agent"
+AGENT_BIN="$INSTALL_ROOT/agent"
 
 CLI_MODE=0
 SERVER_ID=""; TOKEN=""; WS_URL=""; DASHBOARD_URL=""; INTERVAL=1; INTERFACE=""
@@ -62,7 +61,7 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$AGENT_DIR
+WorkingDirectory=$INSTALL_ROOT
 ExecStart=$AGENT_BIN \\
   --server-id $SERVER_ID \\
   --token $TOKEN \\
@@ -95,14 +94,14 @@ command_args="--server-id ${SERVER_ID} --token ${TOKEN} --ws-url \"${WS_URL}\" -
 PIDFILE="/var/run/${SERVICE_NAME}.pid"
 
 command_background=true
-directory="${AGENT_DIR}"
+directory="${INSTALL_ROOT}"
 
 depend() {
   need net
 }
 
 start_pre() {
-    checkpath --directory --mode 0755 "${AGENT_DIR}"
+    checkpath --directory --mode 0755 "${INSTALL_ROOT}"
 }
 
 start() {
@@ -132,7 +131,7 @@ do_install(){
   install_deps
 
   echo -e "${BLUE}>> 创建安装目录：${INSTALL_ROOT}${NC}"
-  mkdir -p "$AGENT_DIR"
+  mkdir -p "$INSTALL_ROOT"
   chmod 755 "$INSTALL_ROOT"
 
   echo -e "${BLUE}>> 检测架构并下载对应二进制${NC}"
@@ -141,7 +140,6 @@ do_install(){
   if [ -f /etc/os-release ] && grep -qi alpine /etc/os-release; then
     IS_ALPINE=1
   fi
-
   if [[ "$IS_ALPINE" -eq 1 ]]; then
     FILE_NAME="agent-alpine"
   elif [[ "$ARCH" == "x86_64" ]]; then
@@ -205,7 +203,7 @@ do_install(){
   else
     echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，无法自动配置服务。"
     echo -e "${YELLOW}请手动后台运行："
-    echo -e "${YELLOW}  cd $AGENT_DIR && nohup $AGENT_BIN --server-id $SERVER_ID --token $TOKEN --ws-url \"$WS_URL\" --dashboard-url \"$DASHBOARD_URL\" --interval $INTERVAL --interface \"$INTERFACE\" &${NC}"
+    echo -e "${YELLOW}  cd $INSTALL_ROOT && nohup $AGENT_BIN --server-id $SERVER_ID --token $TOKEN --ws-url \"$WS_URL\" --dashboard-url \"$DASHBOARD_URL\" --interval $INTERVAL --interface \"$INTERFACE\" &${NC}"
     echo -e "${GREEN}✅ 二进制和配置已准备，请自行集成到后台启动脚本${NC}"
   fi
 }
