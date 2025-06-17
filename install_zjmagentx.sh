@@ -45,7 +45,6 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip iproute2${NC}"
   if command -v apt-get &>/dev/null; then
-    # Debian/Ubuntu buster-backports 兼容
     if ! apt-get update -qq; then
       if grep -R "buster-backports" /etc/apt/{sources.list,sources.list.d} &>/dev/null; then
         echo -e "${YELLOW}检测到失效的 buster-backports → 注释并降级校验${NC}"
@@ -124,7 +123,7 @@ do_install() {
   detect_init_system
   install_deps
 
-  # ── 选择对应的 ZIP 包 ─────────────────────────────────────
+  # 选择对应的 ZIP 包
   ARCH="$(uname -m)"
   if grep -Ei 'alpine' /etc/os-release &>/dev/null; then
     AGENT_ZIP_URL="https://app.zjm.net/agent-alpine.zip"
@@ -140,7 +139,7 @@ do_install() {
     exit 1
   fi
 
-  # ── 下载与解压 ─────────────────────────────────────────────
+  # 下载并解压
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
   rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
@@ -148,29 +147,22 @@ do_install() {
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  # ── 查找名为 agent 的文件 ─────────────────────────────────
-  exec_path=$(find "$AGENT_DIR" -type f -iname agent | head -n1 || true)
-  if [[ -n "$exec_path" ]]; then
-    echo -e "${BLUE}>> 找到 agent 可执行文件：${exec_path}${NC}"
-  else
-    # 回退：选第一个文件
-    exec_path=$(find "$AGENT_DIR" -type f | head -n1 || true)
-    if [[ -z "$exec_path" ]]; then
-      echo -e "${YELLOW}❌ 未在 ZIP 中找到任何文件${NC}"
-      exit 1
-    fi
-    echo -e "${YELLOW}⚠️ 未找到名为 agent 的文件，使用：${exec_path}${NC}"
+  # 如果解压后只有一个子目录，则剥离一层
+  entries=( "$AGENT_DIR"/* )
+  if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
+    echo -e "${BLUE}>> 剥离一层嵌套目录：${entries[0]}${NC}"
+    mv "${entries[0]}"/* "$AGENT_DIR"/
+    rm -rf "${entries[0]}"
   fi
 
-  # ── 安装二进制并清理 ────────────────────────────────────────
-  mv "$exec_path" "$AGENT_BIN"
+  # 校验并设置可执行权限
+  if [[ ! -f "$AGENT_BIN" ]]; then
+    echo -e "${YELLOW}❌ 未在 $AGENT_DIR 找到 agent 可执行文件${NC}"
+    exit 1
+  fi
   chmod +x "$AGENT_BIN"
-  for f in "$AGENT_DIR"/*; do
-    [[ "$f" == "$AGENT_BIN" ]] && continue
-    rm -rf "$f"
-  done
 
-  # ── 参数交互 ────────────────────────────────────────────────
+  # 参数交互
   if [[ $CLI_MODE -eq 0 ]]; then
     read -r -p "服务器唯一标识（server_id）： "  SERVER_ID
     read -r -p "令牌（token）： "                TOKEN
@@ -179,7 +171,7 @@ do_install() {
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # ── 自动探测网卡 ─────────────────────────────────────────────
+  # 自动探测网卡
   DEFAULT_IFACE=$(
     command -v ip &>/dev/null \
       && ip route | awk '/^default/{print $5;exit}' \
@@ -196,13 +188,12 @@ do_install() {
     [[ "${yn:-y}" =~ ^[Nn]$ ]] && read -r -p "请输入网卡名： " INTERFACE || INTERFACE="$DEFAULT_IFACE"
   fi
 
-  # ── 安装为系统服务 ───────────────────────────────────────────
+  # 安装为系统服务
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
     none)
-      echo -e "${YELLOW}⚠️  未检测到 systemd/openrc，已跳过服务安装\n"\
-              "手动运行示例：$AGENT_BIN --server-id $SERVER_ID ...${NC}"
+      echo -e "${YELLOW}⚠️  未检测到 systemd/openrc，已跳过服务安装\n手动运行示例：$AGENT_BIN --server-id $SERVER_ID ...${NC}"
       ;;
   esac
 
@@ -229,7 +220,7 @@ do_uninstall() {
   echo -e "${GREEN}✅ 已卸载 Agent${NC}"
 }
 
-# ───────────── CLI 参数 ────────────────
+# CLI 参数
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)     SERVER_ID="$2";     CLI_MODE=1; shift 2 ;;
@@ -245,13 +236,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ───────────── CLI 一次性安装 ───────────
+# CLI 一次性安装
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-# ───────────── 状态提示 ────────────────
+# 状态提示
 detect_init_system
 echo
 if [[ $INIT_SYS == systemd ]]; then
@@ -267,7 +258,7 @@ else
 fi
 echo
 
-# ───────────── 交互菜单 ────────────────
+# 交互菜单
 echo -e "${BLUE}请选择操作：${NC}"
 echo "1) 安装并启动 Agent"
 echo "2) 停止 服务"
