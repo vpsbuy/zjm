@@ -45,14 +45,7 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip iproute2${NC}"
   if command -v apt-get &>/dev/null; then
-    if ! apt-get update -qq; then
-      if grep -R "buster-backports" /etc/apt/{sources.list,sources.list.d} &>/dev/null; then
-        echo -e "${YELLOW}检测到失效的 buster-backports → 注释并降级校验${NC}"
-        sed -Ei 's|^deb .+buster-backports.*|# &|' /etc/apt/{sources.list,sources.list.d}/*.list 2>/dev/null || true
-        echo 'Acquire::Check-Valid-Until "false";' >/etc/apt/apt.conf.d/99no-check-valid
-        apt-get -o Acquire::Check-Valid-Until=false update -qq
-      fi
-    fi
+    apt-get update -qq
     apt-get install -y --no-install-recommends curl unzip iproute2
   elif command -v dnf &>/dev/null; then
     dnf install -y curl unzip iproute
@@ -69,7 +62,7 @@ install_deps() {
 }
 
 create_systemd_unit() {
-  cat >"$SERVICE_FILE_SYSTEMD" <<EOF
+  cat >"$SERVICE_FILE_SYSTEMD"<<EOF
 [Unit]
 Description=炸酱面探针Agent
 After=network.target
@@ -96,7 +89,7 @@ EOF
 }
 
 create_openrc_script() {
-  cat >"$SERVICE_FILE_OPENRC" <<'EOF'
+  cat >"$SERVICE_FILE_OPENRC"<<'EOF'
 #!/sbin/openrc-run
 description="ZJM Agent"
 command="<AGENT_BIN>"
@@ -123,7 +116,7 @@ do_install() {
   detect_init_system
   install_deps
 
-  # 选择对应的 ZIP 包
+  # ── 选择对应的 ZIP 包 ─────────────────────────────────────
   ARCH="$(uname -m)"
   if grep -Ei 'alpine' /etc/os-release &>/dev/null; then
     AGENT_ZIP_URL="https://app.zjm.net/agent-alpine.zip"
@@ -139,7 +132,7 @@ do_install() {
     exit 1
   fi
 
-  # 下载并解压
+  # ── 下载并解压 ─────────────────────────────────────────────
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
   rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
@@ -147,31 +140,28 @@ do_install() {
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  # 如果解压后只有一个子目录，则剥离一层
-  entries=( "$AGENT_DIR"/* )
-  if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
-    echo -e "${BLUE}>> 剥离一层嵌套目录：${entries[0]}${NC}"
-    mv "${entries[0]}"/* "$AGENT_DIR"/
-    rm -rf "${entries[0]}"
-  fi
-
-  # 校验并设置可执行权限
-  if [[ ! -f "$AGENT_BIN" ]]; then
+  # ── 展平两层 agent/agent 结构 ─────────────────────────────
+  if [[ -d "$AGENT_DIR/agent" && -f "$AGENT_DIR/agent/agent" ]]; then
+    mv "$AGENT_DIR/agent/agent" "$AGENT_BIN"
+    rm -rf "$AGENT_DIR/agent"
+  elif [[ -f "$AGENT_DIR/agent" ]]; then
+    mv "$AGENT_DIR/agent" "$AGENT_BIN"
+  else
     echo -e "${YELLOW}❌ 未在 $AGENT_DIR 找到 agent 可执行文件${NC}"
     exit 1
   fi
   chmod +x "$AGENT_BIN"
 
-  # 参数交互
+  # ── 参数交互 ───────────────────────────────────────────────
   if [[ $CLI_MODE -eq 0 ]]; then
-    read -r -p "服务器唯一标识（server_id）： "  SERVER_ID
-    read -r -p "令牌（token）： "                TOKEN
-    read -r -p "WebSocket 地址（ws-url）： "     WS_URL
-    read -r -p "主控地址（dashboard-url）： "    DASHBOARD_URL
+    read -r -p "服务器唯一标识（server_id）： " SERVER_ID
+    read -r -p "令牌（token）： "               TOKEN
+    read -r -p "WebSocket 地址（ws-url）： "  WS_URL
+    read -r -p "主控地址（dashboard-url）： " DASHBOARD_URL
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # 自动探测网卡
+  # ── 自动探测网卡 ───────────────────────────────────────────
   DEFAULT_IFACE=$(
     command -v ip &>/dev/null \
       && ip route | awk '/^default/{print $5;exit}' \
@@ -188,24 +178,25 @@ do_install() {
     [[ "${yn:-y}" =~ ^[Nn]$ ]] && read -r -p "请输入网卡名： " INTERFACE || INTERFACE="$DEFAULT_IFACE"
   fi
 
-  # 安装为系统服务
+  # ── 安装为系统服务 ─────────────────────────────────────────
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
     none)
-      echo -e "${YELLOW}⚠️  未检测到 systemd/openrc，已跳过服务安装\n手动运行示例：$AGENT_BIN --server-id $SERVER_ID ...${NC}"
+      echo -e "${YELLOW}⚠️  未检测到 systemd/openrc，已跳过服务安装\n"\
+              "手动运行示例：$AGENT_BIN --server-id $SERVER_ID ...${NC}"
       ;;
   esac
 
   echo -e "${GREEN}✅ Agent 安装完成（Init=$INIT_SYS）${NC}"
 }
 
-do_stop()      { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl stop "$SERVICE_NAME" \
-                             || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" stop \
-                             || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
-do_restart()   { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl restart "$SERVICE_NAME" \
-                             || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" restart \
-                             || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
+do_stop()    { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl stop "$SERVICE_NAME" \
+                           || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" stop \
+                           || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
+do_restart() { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl restart "$SERVICE_NAME" \
+                           || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" restart \
+                           || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
 do_uninstall() {
   detect_init_system
   if [[ $INIT_SYS == systemd ]]; then
@@ -220,7 +211,7 @@ do_uninstall() {
   echo -e "${GREEN}✅ 已卸载 Agent${NC}"
 }
 
-# CLI 参数
+# ───────────── CLI 参数 ────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)     SERVER_ID="$2";     CLI_MODE=1; shift 2 ;;
@@ -236,29 +227,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# CLI 一次性安装
+# ───────────── CLI 一次性安装 ───────────
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-# 状态提示
+# ───────────── 状态提示 ────────────────
 detect_init_system
 echo
 if [[ $INIT_SYS == systemd ]]; then
   systemctl is-active --quiet "$SERVICE_NAME" \
-    && echo -e "${GREEN}炸酱面探针Agent服务状态：运行中${NC}" \
-    || echo -e "${YELLOW}炸酱面探针Agent服务状态：未运行${NC}"
+    && echo -e "${GREEN}Agent 服务状态：运行中${NC}" \
+    || echo -e "${YELLOW}Agent 服务状态：未运行${NC}"
 elif [[ $INIT_SYS == openrc ]]; then
   rc-service "$SERVICE_NAME" status &>/dev/null \
-    && echo -e "${GREEN}炸酱面探针Agent服务状态：运行中${NC}" \
-    || echo -e "${YELLOW}炸酱面探针Agent服务状态：未运行${NC}"
+    && echo -e "${GREEN}Agent 服务状态：运行中${NC}" \
+    || echo -e "${YELLOW}Agent 服务状态：未运行${NC}"
 else
   echo -e "${YELLOW}未检测到系统服务${NC}"
 fi
 echo
 
-# 交互菜单
+# ───────────── 交互菜单 ────────────────
 echo -e "${BLUE}请选择操作：${NC}"
 echo "1) 安装并启动 Agent"
 echo "2) 停止 服务"
