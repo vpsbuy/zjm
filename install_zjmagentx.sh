@@ -45,7 +45,6 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip iproute2${NC}"
   if command -v apt-get &>/dev/null; then
-    # Debian/Ubuntu
     if ! apt-get update -qq; then
       if grep -R "buster-backports" /etc/apt/{sources.list,sources.list.d} &>/dev/null; then
         echo -e "${YELLOW}检测到失效的 buster-backports → 自动注释${NC}"
@@ -140,13 +139,24 @@ do_install() {
     exit 1
   fi
 
+  # ── 下载并解压 → 处理嵌套目录 ─────────────────────────────────────────
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
   mkdir -p "$AGENT_DIR"
   curl -fsSL "$AGENT_ZIP_URL" -o /tmp/agent.zip
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  [[ -f "$AGENT_BIN" ]] || { echo -e "${YELLOW}❌ 找不到 $AGENT_BIN${NC}"; exit 1; }
+  # 如果解压后多了一层 agent/ 目录，就把它的内容搬出来
+  if [[ -d "$AGENT_DIR/agent" ]]; then
+    mv "$AGENT_DIR/agent/"* "$AGENT_DIR"/
+    rmdir "$AGENT_DIR/agent"
+  fi
+
+  # 校验并设置可执行权限
+  if [[ ! -f "$AGENT_BIN" ]]; then
+    echo -e "${YELLOW}❌ 未在 $AGENT_DIR 找到 agent 可执行文件${NC}"
+    exit 1
+  fi
   chmod +x "$AGENT_BIN"
 
   # ── 交互补全 ──────────────────────────
