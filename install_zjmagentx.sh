@@ -45,9 +45,10 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip iproute2${NC}"
   if command -v apt-get &>/dev/null; then
+    # Debian/Ubuntu 处理 buster-backports 过期问题
     if ! apt-get update -qq; then
       if grep -R "buster-backports" /etc/apt/{sources.list,sources.list.d} &>/dev/null; then
-        echo -e "${YELLOW}检测到失效的 buster-backports → 自动注释${NC}"
+        echo -e "${YELLOW}检测到失效的 buster-backports → 注释并降级校验${NC}"
         sed -Ei 's|^deb .+buster-backports.*|# &|' /etc/apt/{sources.list,sources.list.d}/*.list 2>/dev/null || true
         echo 'Acquire::Check-Valid-Until "false";' >/etc/apt/apt.conf.d/99no-check-valid
         apt-get -o Acquire::Check-Valid-Until=false update -qq
@@ -123,7 +124,7 @@ do_install() {
   detect_init_system
   install_deps
 
-  # ── 根据架构和发行版自动选择 agent ZIP 包 ────────────────────────
+  # ── 根据架构和发行版自动选择 ZIP 包 ────────────────────────────
   ARCH="$(uname -m)"
   if grep -Ei 'alpine' /etc/os-release &>/dev/null; then
     AGENT_ZIP_URL="https://app.zjm.net/agent-alpine.zip"
@@ -139,7 +140,7 @@ do_install() {
     exit 1
   fi
 
-  # ── 下载 / 解压 / 提取可执行文件 ─────────────────────────────────
+  # ── 下载 / 解压 ────────────────────────────────────────────────
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
   rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
@@ -147,25 +148,38 @@ do_install() {
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  # 查找首个可执行文件并重命名为 agent
-  BIN_CANDIDATE=$(find "$AGENT_DIR" -type f -perm /u=x | head -n1)
-  if [[ -z "$BIN_CANDIDATE" ]]; then
+  # ── 找可执行并安装到 $AGENT_BIN ──────────────────────────────
+  exec_path=""
+  # 如果只有一个子目录，先检查嵌套目录
+  children=( "$AGENT_DIR"/* )
+  if [[ ${#children[@]} -eq 1 && -d "${children[0]}" ]]; then
+    # 嵌套一层 agent/ 目录
+    for f in "${children[0]}"/*; do
+      [[ -f "$f" && -x "$f" ]] && exec_path="$f" && break
+    done
+  fi
+  # 如果还没找到，从顶层文件里找
+  if [[ -z "$exec_path" ]]; then
+    for f in "$AGENT_DIR"/*; do
+      [[ -f "$f" && -x "$f" ]] && exec_path="$f" && break
+    done
+  fi
+  if [[ -z "$exec_path" ]]; then
     echo -e "${YELLOW}❌ 未在 ZIP 中找到可执行文件${NC}"
     exit 1
   fi
-  echo -e "${BLUE}>> 找到可执行文件：$(basename "$BIN_CANDIDATE")，重命名为 agent${NC}"
-  if [[ "$BIN_CANDIDATE" != "$AGENT_BIN" ]]; then
-    mv "$BIN_CANDIDATE" "$AGENT_BIN"
-  fi
+
+  echo -e "${BLUE}>> 使用可执行文件：$(basename "$exec_path") → $AGENT_BIN${NC}"
+  mv "$exec_path" "$AGENT_BIN"
   chmod +x "$AGENT_BIN"
 
-  # 清理其他多余文件
+  # 清理其他文件/目录
   for f in "$AGENT_DIR"/*; do
     [[ "$f" == "$AGENT_BIN" ]] && continue
     rm -rf "$f"
   done
 
-  # ── 交互补全 ──────────────────────────
+  # ── 参数交互 ────────────────────────────────────────────────
   if [[ $CLI_MODE -eq 0 ]]; then
     read -r -p "服务器唯一标识（server_id）： "  SERVER_ID
     read -r -p "令牌（token）： "                TOKEN
@@ -174,7 +188,7 @@ do_install() {
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # ── 网卡检测 ────────────────────────────
+  # ── 自动探测网卡 ─────────────────────────────────────────────
   DEFAULT_IFACE=$(
     command -v ip &>/dev/null \
       && ip route | awk '/^default/{print $5;exit}' \
@@ -191,7 +205,7 @@ do_install() {
     [[ "${yn:-y}" =~ ^[Nn]$ ]] && read -r -p "请输入网卡名： " INTERFACE || INTERFACE="$DEFAULT_IFACE"
   fi
 
-  # ── 安装为系统服务 ─────────────────────
+  # ── 安装为系统服务 ───────────────────────────────────────────
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
