@@ -139,25 +139,31 @@ do_install() {
     exit 1
   fi
 
-  # ── 下载并解压 → 处理嵌套目录 ─────────────────────────────────────────
+  # ── 下载 / 解压 / 提取可执行文件 ─────────────────────────────────
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
+  rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
   curl -fsSL "$AGENT_ZIP_URL" -o /tmp/agent.zip
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  # 如果解压后多了一层 agent/ 目录，就把它的内容搬出来
-  if [[ -d "$AGENT_DIR/agent" ]]; then
-    mv "$AGENT_DIR/agent/"* "$AGENT_DIR"/
-    rmdir "$AGENT_DIR/agent"
-  fi
-
-  # 校验并设置可执行权限
-  if [[ ! -f "$AGENT_BIN" ]]; then
-    echo -e "${YELLOW}❌ 未在 $AGENT_DIR 找到 agent 可执行文件${NC}"
+  # 查找首个可执行文件并重命名为 agent
+  BIN_CANDIDATE=$(find "$AGENT_DIR" -type f -perm /u=x | head -n1)
+  if [[ -z "$BIN_CANDIDATE" ]]; then
+    echo -e "${YELLOW}❌ 未在 ZIP 中找到可执行文件${NC}"
     exit 1
   fi
+  echo -e "${BLUE}>> 找到可执行文件：$(basename "$BIN_CANDIDATE")，重命名为 agent${NC}"
+  if [[ "$BIN_CANDIDATE" != "$AGENT_BIN" ]]; then
+    mv "$BIN_CANDIDATE" "$AGENT_BIN"
+  fi
   chmod +x "$AGENT_BIN"
+
+  # 清理其他多余文件
+  for f in "$AGENT_DIR"/*; do
+    [[ "$f" == "$AGENT_BIN" ]] && continue
+    rm -rf "$f"
+  done
 
   # ── 交互补全 ──────────────────────────
   if [[ $CLI_MODE -eq 0 ]]; then
@@ -168,7 +174,7 @@ do_install() {
     read -r -p "采集间隔(秒，默认 $INTERVAL)： " tmp && INTERVAL="${tmp:-$INTERVAL}"
   fi
 
-  # ── 网卡 ──────────────────────────────
+  # ── 网卡检测 ────────────────────────────
   DEFAULT_IFACE=$(
     command -v ip &>/dev/null \
       && ip route | awk '/^default/{print $5;exit}' \
@@ -185,7 +191,7 @@ do_install() {
     [[ "${yn:-y}" =~ ^[Nn]$ ]] && read -r -p "请输入网卡名： " INTERFACE || INTERFACE="$DEFAULT_IFACE"
   fi
 
-  # ── 写服务并启动 ──────────────────────
+  # ── 安装为系统服务 ─────────────────────
   case "$INIT_SYS" in
     systemd) create_systemd_unit ;;
     openrc)  create_openrc_script ;;
