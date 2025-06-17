@@ -45,7 +45,7 @@ detect_init_system() {
 install_deps() {
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip iproute2${NC}"
   if command -v apt-get &>/dev/null; then
-    # Debian/Ubuntu 处理 buster-backports 过期问题
+    # Debian/Ubuntu buster-backports 兼容
     if ! apt-get update -qq; then
       if grep -R "buster-backports" /etc/apt/{sources.list,sources.list.d} &>/dev/null; then
         echo -e "${YELLOW}检测到失效的 buster-backports → 注释并降级校验${NC}"
@@ -124,7 +124,7 @@ do_install() {
   detect_init_system
   install_deps
 
-  # ── 根据架构和发行版自动选择 ZIP 包 ────────────────────────────
+  # ── 选择对应的 ZIP 包 ─────────────────────────────────────
   ARCH="$(uname -m)"
   if grep -Ei 'alpine' /etc/os-release &>/dev/null; then
     AGENT_ZIP_URL="https://app.zjm.net/agent-alpine.zip"
@@ -140,7 +140,7 @@ do_install() {
     exit 1
   fi
 
-  # ── 下载 / 解压 ────────────────────────────────────────────────
+  # ── 下载与解压 ─────────────────────────────────────────────
   echo -e "${BLUE}>> 下载并解压 $AGENT_ZIP_URL → $AGENT_DIR${NC}"
   rm -rf "$AGENT_DIR"
   mkdir -p "$AGENT_DIR"
@@ -148,32 +148,23 @@ do_install() {
   unzip -qo /tmp/agent.zip -d "$AGENT_DIR"
   rm -f /tmp/agent.zip
 
-  # ── 找可执行并安装到 $AGENT_BIN ──────────────────────────────
-  exec_path=""
-  # 如果只有一个子目录，先检查嵌套目录
-  children=( "$AGENT_DIR"/* )
-  if [[ ${#children[@]} -eq 1 && -d "${children[0]}" ]]; then
-    # 嵌套一层 agent/ 目录
-    for f in "${children[0]}"/*; do
-      [[ -f "$f" && -x "$f" ]] && exec_path="$f" && break
-    done
-  fi
-  # 如果还没找到，从顶层文件里找
-  if [[ -z "$exec_path" ]]; then
-    for f in "$AGENT_DIR"/*; do
-      [[ -f "$f" && -x "$f" ]] && exec_path="$f" && break
-    done
-  fi
-  if [[ -z "$exec_path" ]]; then
-    echo -e "${YELLOW}❌ 未在 ZIP 中找到可执行文件${NC}"
-    exit 1
+  # ── 查找名为 agent 的文件 ─────────────────────────────────
+  exec_path=$(find "$AGENT_DIR" -type f -iname agent | head -n1 || true)
+  if [[ -n "$exec_path" ]]; then
+    echo -e "${BLUE}>> 找到 agent 可执行文件：${exec_path}${NC}"
+  else
+    # 回退：选第一个文件
+    exec_path=$(find "$AGENT_DIR" -type f | head -n1 || true)
+    if [[ -z "$exec_path" ]]; then
+      echo -e "${YELLOW}❌ 未在 ZIP 中找到任何文件${NC}"
+      exit 1
+    fi
+    echo -e "${YELLOW}⚠️ 未找到名为 agent 的文件，使用：${exec_path}${NC}"
   fi
 
-  echo -e "${BLUE}>> 使用可执行文件：$(basename "$exec_path") → $AGENT_BIN${NC}"
+  # ── 安装二进制并清理 ────────────────────────────────────────
   mv "$exec_path" "$AGENT_BIN"
   chmod +x "$AGENT_BIN"
-
-  # 清理其他文件/目录
   for f in "$AGENT_DIR"/*; do
     [[ "$f" == "$AGENT_BIN" ]] && continue
     rm -rf "$f"
@@ -219,11 +210,11 @@ do_install() {
 }
 
 do_stop()      { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl stop "$SERVICE_NAME" \
-                                               || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" stop \
-                                               || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
+                             || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" stop \
+                             || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
 do_restart()   { detect_init_system; [[ $INIT_SYS == systemd ]] && systemctl restart "$SERVICE_NAME" \
-                                               || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" restart \
-                                               || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
+                             || [[ $INIT_SYS == openrc ]] && rc-service "$SERVICE_NAME" restart \
+                             || echo -e "${YELLOW}未检测到已安装服务${NC}"; }
 do_uninstall() {
   detect_init_system
   if [[ $INIT_SYS == systemd ]]; then
