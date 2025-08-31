@@ -4,27 +4,24 @@ IFS=$'\n\t'
 
 ############################################
 # install_zjmagent.sh
-# 交互式安装/管理 炸酱面探针 Agent 服务脚本
-# - x86_64:  https://app.zjm.net/agent2.zip
-# - ARM64:   https://app.zjm.net/agent2-arm.zip
-# - 采样(--interval)固定 5s（不提示）
-# - 推送(--push-interval)默认 30s（可改）
+# 交互式安装/管理 炸酱面探针 agent 服务脚本
+# 本地采样 --interval 默认 5 且不交互；--push-interval 默认 30 可交互
 ############################################
 
-# 平台检测：Linux / macOS / WSL/Git-Bash（建议在 Linux 上运行）
+# 平台检测
 OS="$(uname -s)"
 if [[ ! "$OS" =~ ^(Linux|Darwin|MINGW|MSYS) ]]; then
   echo "⚠️ 当前系统 $OS 不支持本脚本，请在 Linux/macOS/WSL 或 Git Bash 下运行。"
   exit 1
 fi
 
-# 必须以 root 用户运行
+# 必须以 root 运行
 if [ "$(id -u)" -ne 0 ]; then
   echo "⚠️ 请以 root 或 sudo 权限运行此脚本"
   exit 1
 fi
 
-# 颜色/前缀
+# 颜色
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
 # 服务名与路径
@@ -37,21 +34,21 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT_DIR="$PROJECT_DIR/$SERVICE_NAME"
 AGENT_BIN="$AGENT_DIR/agent"
 
-# CLI 模式及参数
-CLI_MODE=0
-SERVER_ID=""; TOKEN=""; WS_URL=""; DASHBOARD_URL=""
-INTERVAL=5          # 固定采样 5s（不提示）
-PUSH_INTERVAL=30    # 推送间隔默认 30s（提示）
-INTERFACE=""
+# 下载基址（你提供的三份包）
+AGENT_BASE_URL="https://app.zjm.net"
 
-################################
-# 依赖：curl unzip
-################################
+# 默认参数
+SAMPLE_INTERVAL=5      # --interval 本地采样周期（秒，固定默认，不交互）
+PUSH_INTERVAL=30       # --push-interval 推送最小间隔（秒，交互可改）
+
+# CLI 模式标志及参数
+CLI_MODE=0
+SERVER_ID=""; TOKEN=""; WS_URL=""; DASHBOARD_URL=""; INTERFACE=""
+
 install_deps(){
   echo -e "${BLUE}>> 检测并安装依赖：curl unzip${NC}"
   if command -v apt-get >/dev/null; then
-    apt-get update
-    apt-get install -y curl unzip
+    apt-get update && apt-get install -y curl unzip
   elif command -v yum >/dev/null; then
     yum install -y curl unzip
   elif command -v dnf >/dev/null; then
@@ -66,25 +63,23 @@ install_deps(){
   fi
 }
 
-################################
-# 写入 systemd 单元
-################################
 write_systemd_service(){
   echo -e "${BLUE}>> 写入 systemd 单元：${SYSTEMD_SERVICE_FILE}${NC}"
   cat > "$SYSTEMD_SERVICE_FILE" <<EOF
 [Unit]
-Description=炸酱面探针agent
-After=network.target
+Description=炸酱面探针 agent
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=$AGENT_DIR
 ExecStart=$AGENT_BIN \\
-  --server-id $SERVER_ID \\
-  --token $TOKEN \\
+  --server-id "$SERVER_ID" \\
+  --token "$TOKEN" \\
   --ws-url "$WS_URL" \\
   --dashboard-url "$DASHBOARD_URL" \\
-  --interval $INTERVAL \\
+  --interval $SAMPLE_INTERVAL \\
   --push-interval $PUSH_INTERVAL \\
   --interface "$INTERFACE"
 Restart=always
@@ -99,17 +94,14 @@ EOF
   systemctl restart "${SERVICE_NAME}.service"
 }
 
-################################
-# 写入 OpenRC 服务脚本
-################################
 write_openrc_service(){
   echo -e "${BLUE}>> 写入 OpenRC 服务脚本：${OPENRC_SERVICE_FILE}${NC}"
   cat > "$OPENRC_SERVICE_FILE" <<'EOF'
 #!/sbin/openrc-run
 name="zjmagent"
-description="炸酱面探针agent"
+description="炸酱面探针 agent"
 command="{{AGENT_BIN}}"
-command_args="--server-id {{SERVER_ID}} --token {{TOKEN}} --ws-url \"{{WS_URL}}\" --dashboard-url \"{{DASHBOARD_URL}}\" --interval {{INTERVAL}} --push-interval {{PUSH_INTERVAL}} --interface \"{{INTERFACE}}\""
+command_args="--server-id \"{{SERVER_ID}}\" --token \"{{TOKEN}}\" --ws-url \"{{WS_URL}}\" --dashboard-url \"{{DASHBOARD_URL}}\" --interval {{SAMPLE_INTERVAL}} --push-interval {{PUSH_INTERVAL}} --interface \"{{INTERFACE}}\""
 directory="{{AGENT_DIR}}"
 pidfile="/var/run/${RC_SVCNAME}.pid"
 command_background=true
@@ -123,7 +115,7 @@ EOF
     -e "s|{{TOKEN}}|$TOKEN|g" \
     -e "s|{{WS_URL}}|$WS_URL|g" \
     -e "s|{{DASHBOARD_URL}}|$DASHBOARD_URL|g" \
-    -e "s|{{INTERVAL}}|$INTERVAL|g" \
+    -e "s|{{SAMPLE_INTERVAL}}|$SAMPLE_INTERVAL|g" \
     -e "s|{{PUSH_INTERVAL}}|$PUSH_INTERVAL|g" \
     -e "s|{{INTERFACE}}|$INTERFACE|g" \
     -e "s|{{AGENT_DIR}}|$AGENT_DIR|g" \
@@ -133,41 +125,35 @@ EOF
   rc-service "$SERVICE_NAME" restart || rc-service "$SERVICE_NAME" start
 }
 
-################################
-# 安装并启动
-################################
-do_install(){
-  echo -e "${BLUE}>>> 安装并启动 炸酱面探针agent <<<${NC}"
+pick_and_fetch_agent(){
+  echo -e "${BLUE}>> 选择合适压缩包并下载${NC}"
+  ARCH="$(uname -m)"
+  ZIP_NAME="agent2.zip"
 
-  install_deps
-
-  # 架构判断：ARM(甲骨文 aarch64 等) → agent2-arm.zip；否则 → agent2.zip
-  ARCH="$(uname -m | tr '[:upper:]' '[:lower:]')"
-  if [[ "$ARCH" =~ ^(aarch64|arm64|armv8) ]]; then
-    AGENT_ZIP_URL="https://app.zjm.net/agent2-arm.zip"
+  if grep -Eqi 'alpine' /etc/os-release 2>/dev/null || [[ -f /etc/alpine-release ]]; then
+    ZIP_NAME="agent2-alpine.zip"
+  elif ldd --version 2>&1 | grep -qi musl; then
+    ZIP_NAME="agent2-alpine.zip"
+  elif [[ "$ARCH" =~ ^(aarch64|armv8l|arm64)$ ]]; then
     ZIP_NAME="agent2-arm.zip"
   else
-    AGENT_ZIP_URL="https://app.zjm.net/agent2.zip"
     ZIP_NAME="agent2.zip"
   fi
-  echo -e "${BLUE}>> 检测到架构：${ARCH}，下载：${ZIP_NAME}${NC}"
 
-  # 清理旧目录
-  if [[ -e "$AGENT_DIR" ]]; then
-    echo -e "${YELLOW}⚠️ 删除旧目录：$AGENT_DIR${NC}"
-    rm -rf "$AGENT_DIR"
-  fi
+  AGENT_ZIP_URL="${AGENT_BASE_URL}/${ZIP_NAME}"
+  echo -e "${BLUE}>> 检测到架构 ${ARCH}，选择下载：${ZIP_NAME}${NC}"
+
+  [[ -e "$AGENT_DIR" ]] && { echo -e "${YELLOW}⚠️ 删除旧目录：$AGENT_DIR${NC}"; rm -rf "$AGENT_DIR"; }
   mkdir -p "$AGENT_DIR"
 
-  # 下载与解压
-  curl -fsSL "$AGENT_ZIP_URL" -o "/tmp/${ZIP_NAME}"
-  unzip -o "/tmp/${ZIP_NAME}" -d "$AGENT_DIR" -x "agent.log" || {
-    echo -e "${YELLOW}⚠️ 解压失败，请检查 ${ZIP_NAME}${NC}"
-    exit 1
-  }
-  rm -f "/tmp/${ZIP_NAME}"
+  tmpzip="/tmp/${ZIP_NAME}"
+  echo -e "${BLUE}>> 下载 ${AGENT_ZIP_URL}${NC}"
+  curl -fsSL "$AGENT_ZIP_URL" -o "$tmpzip"
 
-  # 查找可执行
+  echo -e "${BLUE}>> 解压到 ${AGENT_DIR}${NC}"
+  unzip -o "$tmpzip" -d "$AGENT_DIR" -x "agent.log"
+  rm -f "$tmpzip"
+
   if [ ! -f "$AGENT_BIN" ]; then
     FOUND_BIN=$(find "$AGENT_DIR" -maxdepth 2 -type f -name "agent" | head -n1 || true)
     if [[ -n "$FOUND_BIN" ]]; then
@@ -179,25 +165,30 @@ do_install(){
     fi
   fi
   chmod +x "$AGENT_BIN"
+}
 
-  # 交互输入（仅推送间隔可改；采样固定 5s）
+do_install(){
+  echo -e "${BLUE}>>> 安装并启动 炸酱面探针 agent <<<${NC}"
+  install_deps
+  pick_and_fetch_agent
+
+  # 交互采集（不再问 --interval）
   if [[ $CLI_MODE -eq 0 ]]; then
     read -r -p "请输入服务器唯一标识（server_id）： " SERVER_ID
     read -r -p "请输入令牌（token）： " TOKEN
     read -r -p "请输入 WebSocket 地址（ws-url）： " WS_URL
     read -r -p "请输入主控地址（dashboard-url）： " DASHBOARD_URL
-    read -r -p "请输入推送间隔（秒，默认 ${PUSH_INTERVAL}）： " tmp
-    PUSH_INTERVAL="${tmp:-$PUSH_INTERVAL}"
-    echo -e "${BLUE}本地采样间隔固定为 ${INTERVAL}s（不提示修改）${NC}"
+    read -r -p "请输入推送间隔 --push-interval（秒，默认 ${PUSH_INTERVAL}）： " tmp2
+    PUSH_INTERVAL="${tmp2:-$PUSH_INTERVAL}"
   fi
 
-  # 网卡接口选择
+  # 网卡接口
   DEFAULT_IFACE="$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}')"
   if [[ $CLI_MODE -eq 1 ]]; then
-    if [[ -n "$DEFAULT_IFACE" && -z "$INTERFACE" ]]; then
+    if [[ -n "$DEFAULT_IFACE" ]]; then
       INTERFACE="$DEFAULT_IFACE"
       echo -e "${BLUE}CLI 模式，自动使用接口：${INTERFACE}${NC}"
-    elif [[ -z "$INTERFACE" ]]; then
+    else
       echo -e "${YELLOW}⚠️ CLI 模式下未检测到接口，请用 --interface 指定${NC}"
       exit 1
     fi
@@ -224,16 +215,17 @@ do_install(){
     echo -e "${GREEN}✅ 使用 OpenRC，安装并启动完成${NC}"
   else
     echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，手动后台运行：${NC}"
-    echo -e "${YELLOW}  cd $AGENT_DIR && nohup $AGENT_BIN --server-id $SERVER_ID --token $TOKEN --ws-url \"$WS_URL\" --dashboard-url \"$DASHBOARD_URL\" --interval $INTERVAL --push-interval $PUSH_INTERVAL --interface \"$INTERFACE\" &${NC}"
+    echo -e "${YELLOW}  cd \"$AGENT_DIR\" && nohup \"$AGENT_BIN\" \\"
+    echo -e "${YELLOW}     --server-id \"$SERVER_ID\" --token \"$TOKEN\" \\"
+    echo -e "${YELLOW}     --ws-url \"$WS_URL\" --dashboard-url \"$DASHBOARD_URL\" \\"
+    echo -e "${YELLOW}     --interval $SAMPLE_INTERVAL --push-interval $PUSH_INTERVAL \\"
+    echo -e "${YELLOW}     --interface \"$INTERFACE\" >/dev/null 2>&1 &${NC}"
     echo -e "${GREEN}✅ 二进制已就绪，请自行集成启动${NC}"
   fi
 }
 
-################################
-# 停止/重启/卸载
-################################
 do_stop(){
-  echo -e "${BLUE}>> 停止 炸酱面探针agent 服务${NC}"
+  echo -e "${BLUE}>> 停止 炸酱面探针 agent 服务${NC}"
   if command -v systemctl >/dev/null; then
     systemctl stop "${SERVICE_NAME}.service" || true
     echo -e "${GREEN}✅ 服务已停止${NC}"
@@ -245,7 +237,7 @@ do_stop(){
   fi
 }
 do_restart(){
-  echo -e "${BLUE}>> 重启 炸酱面探针agent 服务${NC}"
+  echo -e "${BLUE}>> 重启 炸酱面探针 agent 服务${NC}"
   if command -v systemctl >/dev/null; then
     systemctl restart "${SERVICE_NAME}.service"
     echo -e "${GREEN}✅ 服务已重启${NC}"
@@ -257,7 +249,7 @@ do_restart(){
   fi
 }
 do_uninstall(){
-  echo -e "${BLUE}>> 卸载 炸酱面探针agent 服务${NC}"
+  echo -e "${BLUE}>> 卸载 炸酱面探针 agent 服务${NC}"
   if command -v systemctl >/dev/null; then
     systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
     systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
@@ -274,16 +266,14 @@ do_uninstall(){
   fi
 }
 
-################################
-# 解析 CLI 参数
-################################
+# 解析 CLI 参数（仍允许用 CLI 覆盖 --interval / --push-interval）
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)       SERVER_ID="$2";       CLI_MODE=1; shift 2;;
     --token)           TOKEN="$2";           CLI_MODE=1; shift 2;;
     --ws-url)          WS_URL="$2";          CLI_MODE=1; shift 2;;
     --dashboard-url)   DASHBOARD_URL="$2";   CLI_MODE=1; shift 2;;
-    --interval)        INTERVAL="$2";        CLI_MODE=1; shift 2;;        # 允许 CLI 覆盖（默认 5）
+    --interval)        SAMPLE_INTERVAL="$2"; CLI_MODE=1; shift 2;;
     --push-interval)   PUSH_INTERVAL="$2";   CLI_MODE=1; shift 2;;
     --interface)       INTERFACE="$2";       CLI_MODE=1; shift 2;;
     stop)              do_stop;              exit 0;;
@@ -293,37 +283,33 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# CLI 模式参数齐全则直接安装
+# CLI 参数齐全则直接安装
 if [[ $CLI_MODE -eq 1 && -n "$SERVER_ID" && -n "$TOKEN" && -n "$WS_URL" && -n "$DASHBOARD_URL" ]]; then
   do_install
   exit 0
 fi
 
-################################
-# 交互式菜单前显示状态
-################################
+# 交互式菜单前状态
 echo
 if command -v systemctl >/dev/null; then
   if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-    echo -e "${GREEN}炸酱面探针agent 服务状态（systemd）：运行中${NC}"
+    echo -e "${GREEN}炸酱面探针 agent 服务状态（systemd）：运行中${NC}"
   else
-    echo -e "${YELLOW}炸酱面探针agent 服务状态（systemd）：未运行${NC}"
+    echo -e "${YELLOW}炸酱面探针 agent 服务状态（systemd）：未运行${NC}"
   fi
 elif command -v rc-service >/dev/null; then
   if rc-service "$SERVICE_NAME" status >/dev/null 2>&1; then
-    echo -e "${GREEN}炸酱面探针agent 服务状态（OpenRC）：运行中${NC}"
+    echo -e "${GREEN}炸酱面探针 agent 服务状态（OpenRC）：运行中${NC}"
   else
-    echo -e "${YELLOW}炸酱面探针agent 服务状态（OpenRC）：未运行或未配置${NC}"
+    echo -e "${YELLOW}炸酱面探针 agent 服务状态（OpenRC）：未运行或未配置${NC}"
   fi
 else
   echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC 服务管理${NC}"
 fi
 echo
 
-################################
 # 交互式菜单
-################################
-echo -e "${BLUE}炸酱面探针agent${NC}"
+echo -e "${BLUE}炸酱面探针 agent${NC}"
 echo "1) 安装并启动"
 echo "2) 停止"
 echo "3) 重启"
