@@ -3,9 +3,9 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ############################################
-# install_zjmagent.sh
-# 交互式安装/管理 炸酱面探针 agent 服务脚本
-# 本地采样 --interval 默认 5 且不交互；--push-interval 默认 30 可交互
+# install_zjmagent2.sh
+# 交互式安装/管理 炸酱面探针 agent（zjmagent2）
+# 本地采样 --interval 默认 5（不交互）；--push-interval 默认 30（可交互）
 ############################################
 
 # 平台检测
@@ -24,12 +24,12 @@ fi
 # 颜色
 YELLOW='\033[1;33m'; GREEN='\033[0;32m'; BLUE='\033[0;34m'; NC='\033[0m'
 
-# 服务名与路径
-SERVICE_NAME="zjmagent"
+# 服务名与路径（改为 zjmagent2）
+SERVICE_NAME="zjmagent2"
 SYSTEMD_SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 OPENRC_SERVICE_FILE="/etc/init.d/${SERVICE_NAME}"
 
-# 项目目录与 Agent 路径
+# 项目目录与 Agent 路径（目录改为 zjmagent2）
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENT_DIR="$PROJECT_DIR/$SERVICE_NAME"
 AGENT_BIN="$AGENT_DIR/agent"
@@ -67,7 +67,7 @@ write_systemd_service(){
   echo -e "${BLUE}>> 写入 systemd 单元：${SYSTEMD_SERVICE_FILE}${NC}"
   cat > "$SYSTEMD_SERVICE_FILE" <<EOF
 [Unit]
-Description=炸酱面探针 agent
+Description=炸酱面探针 agent (zjmagent2)
 After=network-online.target
 Wants=network-online.target
 
@@ -98,8 +98,8 @@ write_openrc_service(){
   echo -e "${BLUE}>> 写入 OpenRC 服务脚本：${OPENRC_SERVICE_FILE}${NC}"
   cat > "$OPENRC_SERVICE_FILE" <<'EOF'
 #!/sbin/openrc-run
-name="zjmagent"
-description="炸酱面探针 agent"
+name="zjmagent2"
+description="炸酱面探针 agent (zjmagent2)"
 command="{{AGENT_BIN}}"
 command_args="--server-id \"{{SERVER_ID}}\" --token \"{{TOKEN}}\" --ws-url \"{{WS_URL}}\" --dashboard-url \"{{DASHBOARD_URL}}\" --interval {{SAMPLE_INTERVAL}} --push-interval {{PUSH_INTERVAL}} --interface \"{{INTERFACE}}\""
 directory="{{AGENT_DIR}}"
@@ -168,7 +168,7 @@ pick_and_fetch_agent(){
 }
 
 do_install(){
-  echo -e "${BLUE}>>> 安装并启动 炸酱面探针 agent <<<${NC}"
+  echo -e "${BLUE}>>> 安装并启动 炸酱面探针 agent（zjmagent2）<<<${NC}"
   install_deps
   pick_and_fetch_agent
 
@@ -209,10 +209,10 @@ do_install(){
   # 启动服务
   if command -v systemctl >/dev/null && systemctl --version >/dev/null 2>&1; then
     write_systemd_service
-    echo -e "${GREEN}✅ 使用 systemd，安装并启动完成${NC}"
+    echo -e "${GREEN}✅ 使用 systemd，安装并启动完成（服务名：${SERVICE_NAME}）${NC}"
   elif command -v rc-update >/dev/null && command -v openrc >/dev/null; then
     write_openrc_service
-    echo -e "${GREEN}✅ 使用 OpenRC，安装并启动完成${NC}"
+    echo -e "${GREEN}✅ 使用 OpenRC，安装并启动完成（服务名：${SERVICE_NAME}）${NC}"
   else
     echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC，手动后台运行：${NC}"
     echo -e "${YELLOW}  cd \"$AGENT_DIR\" && nohup \"$AGENT_BIN\" \\"
@@ -225,7 +225,7 @@ do_install(){
 }
 
 do_stop(){
-  echo -e "${BLUE}>> 停止 炸酱面探针 agent 服务${NC}"
+  echo -e "${BLUE}>> 停止 zjmagent2 服务${NC}"
   if command -v systemctl >/dev/null; then
     systemctl stop "${SERVICE_NAME}.service" || true
     echo -e "${GREEN}✅ 服务已停止${NC}"
@@ -237,7 +237,7 @@ do_stop(){
   fi
 }
 do_restart(){
-  echo -e "${BLUE}>> 重启 炸酱面探针 agent 服务${NC}"
+  echo -e "${BLUE}>> 重启 zjmagent2 服务${NC}"
   if command -v systemctl >/dev/null; then
     systemctl restart "${SERVICE_NAME}.service"
     echo -e "${GREEN}✅ 服务已重启${NC}"
@@ -249,8 +249,8 @@ do_restart(){
   fi
 }
 do_uninstall(){
-  echo -e "${BLUE}>> 卸载 炸酱面探针 agent 服务${NC}"
-  if command -v systemctl >/dev/null; then
+  echo -e "${BLUE}>> 卸载 zjmagent2 服务${NC}"
+  if command -v systemctl >/devnull 2>&1; then
     systemctl stop "${SERVICE_NAME}.service" 2>/dev/null || true
     systemctl disable "${SERVICE_NAME}.service" 2>/dev/null || true
     rm -f "$SYSTEMD_SERVICE_FILE"
@@ -266,7 +266,7 @@ do_uninstall(){
   fi
 }
 
-# 解析 CLI 参数（仍允许用 CLI 覆盖 --interval / --push-interval）
+# 解析 CLI 参数（允许用 CLI 覆盖）
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server-id)       SERVER_ID="$2";       CLI_MODE=1; shift 2;;
@@ -293,15 +293,15 @@ fi
 echo
 if command -v systemctl >/dev/null; then
   if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-    echo -e "${GREEN}炸酱面探针 agent 服务状态（systemd）：运行中${NC}"
+    echo -e "${GREEN}zjmagent2 服务状态（systemd）：运行中${NC}"
   else
-    echo -e "${YELLOW}炸酱面探针 agent 服务状态（systemd）：未运行${NC}"
+    echo -e "${YELLOW}zjmagent2 服务状态（systemd）：未运行${NC}"
   fi
 elif command -v rc-service >/dev/null; then
   if rc-service "$SERVICE_NAME" status >/dev/null 2>&1; then
-    echo -e "${GREEN}炸酱面探针 agent 服务状态（OpenRC）：运行中${NC}"
+    echo -e "${GREEN}zjmagent2 服务状态（OpenRC）：运行中${NC}"
   else
-    echo -e "${YELLOW}炸酱面探针 agent 服务状态（OpenRC）：未运行或未配置${NC}"
+    echo -e "${YELLOW}zjmagent2 服务状态（OpenRC）：未运行或未配置${NC}"
   fi
 else
   echo -e "${YELLOW}⚠️ 未检测到 systemd/OpenRC 服务管理${NC}"
@@ -309,7 +309,7 @@ fi
 echo
 
 # 交互式菜单
-echo -e "${BLUE}炸酱面探针 agent${NC}"
+echo -e "${BLUE}zjmagent2 管理器${NC}"
 echo "1) 安装并启动"
 echo "2) 停止"
 echo "3) 重启"
